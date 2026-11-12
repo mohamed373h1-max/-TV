@@ -1,0 +1,6 @@
+{
+  "name": "جوكر TV",
+  "description": "تطبيق جوكر TV - البث المباشر لقنوات بي إن سبورت الرياضية ومسلسلات رمضان وأحدث أفلام السينما المصرية بسيرفرات قوية ونظام المفضلة والتقييمات",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
