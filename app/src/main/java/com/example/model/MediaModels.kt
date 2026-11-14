@@ -4,7 +4,8 @@ enum class MediaType {
   CHANNEL,
   MATCH,
   SERIES,
-  MOVIE
+  MOVIE,
+  CARTOON
 }
 
 data class ServerInfo(
@@ -83,6 +84,25 @@ data class EgyptianMovie(
   val synopsis: String,
   val boxOffice: String = "",
   val servers: List<ServerInfo>
+)
+
+data class CartoonItem(
+  val id: String,
+  val title: String,
+  val originalTitle: String,
+  val category: String, // "أنمي ياباني", "كرتون عالمي", "أفلام أنميشن"
+  val dubbingLanguage: String = "مدبلج بالعربي",
+  val dubbingStudio: String,
+  val releaseYear: Int,
+  val genre: String,
+  val posterUrl: String,
+  val rating: Float,
+  val ratingCount: Int,
+  val synopsis: String,
+  val episodesCount: Int,
+  val isMovie: Boolean = false,
+  val ageRating: String = "عائلي • جميع الأعمار",
+  val episodes: List<Episode>
 )
 
 data class UserComment(

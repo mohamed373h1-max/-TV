@@ -57,6 +57,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -123,14 +124,26 @@ fun JokerVideoPlayer(
   var hasError by remember { mutableStateOf(false) }
   var isFullscreen by remember { mutableStateOf(false) }
   var retryTrigger by remember { mutableIntStateOf(0) }
+  var forceLocalDemoTrigger by remember { mutableIntStateOf(0) }
   var hasSeekedInitial by remember { mutableStateOf(false) }
+  var triedServerIds by remember(title, subtitle) { mutableStateOf(setOf<String>()) }
+  var isUsingLocalDemo by remember(selectedServer.id, forceLocalDemoTrigger) {
+    mutableStateOf(
+      selectedServer.streamUrl == JokerTvDataProvider.STREAM_LOCAL_RAW ||
+        selectedServer.streamUrl.startsWith("local", ignoreCase = true)
+    )
+  }
+
+  val latestServers by rememberUpdatedState(servers)
+  val latestSelectedServer by rememberUpdatedState(selectedServer)
+  val latestOnServerSelected by rememberUpdatedState(onServerSelected)
 
   // ExoPlayer instance configured with custom MediaSourceFactory and audio focus
   val exoPlayer = remember {
     val httpDataSourceFactory = DefaultHttpDataSource.Factory()
       .setUserAgent("JokerTV/2.0 (Android; Linux)")
-      .setConnectTimeoutMs(8000)
-      .setReadTimeoutMs(8000)
+      .setConnectTimeoutMs(6000)
+      .setReadTimeoutMs(7000)
       .setAllowCrossProtocolRedirects(true)
 
     val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
@@ -150,20 +163,42 @@ fun JokerVideoPlayer(
   }
 
   // Helper to build typed MediaItem with proper MimeTypes
+  fun buildFallbackRawMediaItem(): MediaItem {
+    val fallbackUri = RawResourceDataSource.buildRawResourceUri(R.raw.sample_video)
+    return MediaItem.Builder()
+      .setUri(fallbackUri)
+      .setMimeType(MimeTypes.VIDEO_MP4)
+      .build()
+  }
+
   fun buildMediaItem(url: String): MediaItem {
-    val uri = if (url == JokerTvDataProvider.STREAM_LOCAL_RAW || url.startsWith("local", ignoreCase = true)) {
-      RawResourceDataSource.buildRawResourceUri(R.raw.sample_video)
-    } else {
-      Uri.parse(url)
+    if (url.isBlank() || url == JokerTvDataProvider.STREAM_LOCAL_RAW || url.startsWith("local", ignoreCase = true)) {
+      return buildFallbackRawMediaItem()
     }
+    val uri = Uri.parse(url)
     val uriString = uri.toString().lowercase()
     val builder = MediaItem.Builder().setUri(uri)
-    if (uriString.contains(".m3u8")) {
-      builder.setMimeType(MimeTypes.APPLICATION_M3U8)
-    } else if (uriString.contains(".mp4")) {
-      builder.setMimeType(MimeTypes.VIDEO_MP4)
+    when {
+      uriString.contains(".m3u8") -> builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+      uriString.contains(".mp4") -> builder.setMimeType(MimeTypes.VIDEO_MP4)
     }
     return builder.build()
+  }
+
+  fun trySwitchToNextOnlineServer(): Boolean {
+    val updatedTried = triedServerIds + latestSelectedServer.id
+    triedServerIds = updatedTried
+    val nextOnline = latestServers.firstOrNull { srv ->
+      srv.id !in updatedTried &&
+        srv.streamUrl != JokerTvDataProvider.STREAM_LOCAL_RAW &&
+        srv.streamUrl.startsWith("http", ignoreCase = true)
+    }
+    if (nextOnline != null) {
+      latestOnServerSelected(nextOnline)
+      Toast.makeText(context, "تبديل تلقائي إلى ${nextOnline.name}", Toast.LENGTH_SHORT).show()
+      return true
+    }
+    return false
   }
 
   // Update media item when selected server, episode, or retry changes
@@ -172,31 +207,35 @@ fun JokerVideoPlayer(
       hasError = false
       isBuffering = true
       hasSeekedInitial = false
-      exoPlayer.stop()
-      exoPlayer.clearMediaItems()
+      val isLocalSrv = selectedServer.streamUrl == JokerTvDataProvider.STREAM_LOCAL_RAW ||
+        selectedServer.streamUrl.startsWith("local", ignoreCase = true)
+      isUsingLocalDemo = isLocalSrv
       val mediaItem = buildMediaItem(selectedServer.streamUrl)
       exoPlayer.setMediaItem(mediaItem)
-      if (initialPositionMs > 3000L && !isLiveStream) {
+      if (initialPositionMs > 3000L && !isLiveStream && !isLocalSrv) {
         exoPlayer.seekTo(initialPositionMs)
         hasSeekedInitial = true
       }
+      exoPlayer.playWhenReady = true
       exoPlayer.prepare()
-      exoPlayer.play()
-    } catch (e: Exception) {
-      // Fallback automatically to local raw so it never fails
-      try {
-        val fallbackUri = RawResourceDataSource.buildRawResourceUri(R.raw.sample_video)
-        exoPlayer.setMediaItem(MediaItem.fromUri(fallbackUri))
-        if (initialPositionMs > 3000L && !isLiveStream) {
-          exoPlayer.seekTo(initialPositionMs)
-          hasSeekedInitial = true
-        }
-        exoPlayer.prepare()
-        exoPlayer.play()
-        hasError = false
-      } catch (ex: Exception) {
+    } catch (_: Exception) {
+      if (!trySwitchToNextOnlineServer()) {
         hasError = true
         isBuffering = false
+      }
+    }
+  }
+
+  // Buffering watchdog: if remote stream stalls for > 6.5s, try the next online server first
+  LaunchedEffect(isBuffering, selectedServer.id, retryTrigger) {
+    val isRemoteUrl = selectedServer.streamUrl.startsWith("http", ignoreCase = true)
+    if (isBuffering && !hasError && isRemoteUrl) {
+      delay(6500)
+      if (isBuffering && !hasError && exoPlayer.playbackState != Player.STATE_READY) {
+        if (!trySwitchToNextOnlineServer()) {
+          isBuffering = false
+          hasError = true
+        }
       }
     }
   }
@@ -217,7 +256,7 @@ fun JokerVideoPlayer(
             isPlaying = false
           }
           Player.STATE_IDLE -> {
-            isBuffering = false
+            // Do not force isBuffering = false prematurely on idle transitions before prepare
           }
         }
       }
@@ -227,17 +266,7 @@ fun JokerVideoPlayer(
       }
 
       override fun onPlayerError(error: PlaybackException) {
-        // Automatic fallback to local raw video when network error or 403 occurs
-        try {
-          val fallbackUri = RawResourceDataSource.buildRawResourceUri(R.raw.sample_video)
-          exoPlayer.stop()
-          exoPlayer.clearMediaItems()
-          exoPlayer.setMediaItem(MediaItem.fromUri(fallbackUri))
-          exoPlayer.prepare()
-          exoPlayer.play()
-          hasError = false
-          isBuffering = false
-        } catch (e: Exception) {
+        if (!trySwitchToNextOnlineServer()) {
           isBuffering = false
           hasError = true
         }
@@ -346,14 +375,14 @@ fun JokerVideoPlayer(
           modifier = Modifier.padding(16.dp)
         ) {
           Text(
-            text = "تعذر الاتصال بالسيرفر الحالي",
+            text = "تعذر الاتصال بالسيرفرات الأونلاين",
             color = JokerLiveRed,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
           )
           Spacer(modifier = Modifier.height(6.dp))
           Text(
-            text = "يمكنك إعادة المحاولة أو فتح البث في أي مشغل خارجي (VLC / MX)",
+            text = "تحقق من اتصال الإنترنت، أو أضف رابط بث مباشر (M3U8)، أو جرّب مشغل الهاتف",
             color = TextSecondary,
             fontSize = 11.sp
           )
@@ -361,6 +390,7 @@ fun JokerVideoPlayer(
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
               onClick = {
+                triedServerIds = emptySet()
                 hasError = false
                 retryTrigger++
               },
@@ -370,6 +400,22 @@ fun JokerVideoPlayer(
               Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(4.dp))
               Text("إعادة المحاولة", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Button(
+              onClick = {
+                hasError = false
+                isBuffering = true
+                isUsingLocalDemo = true
+                forceLocalDemoTrigger++
+                exoPlayer.setMediaItem(buildFallbackRawMediaItem())
+                exoPlayer.playWhenReady = true
+                exoPlayer.prepare()
+              },
+              colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+              shape = RoundedCornerShape(8.dp)
+            ) {
+              Text("تجريبي أوفلاين", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
 
             Button(
@@ -385,6 +431,25 @@ fun JokerVideoPlayer(
             }
           }
         }
+      }
+    }
+
+    // Persistent Local Demo Warning Badge (so user always knows when offline backup clip is playing)
+    if (isUsingLocalDemo && !hasError) {
+      Surface(
+        color = JokerGold.copy(alpha = 0.92f),
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+          .align(Alignment.TopStart)
+          .padding(start = 10.dp, top = 42.dp)
+      ) {
+        Text(
+          text = "عرض تجريبي محلي (أوفلاين) — اختر سيرفر 1 للبث الأونلاين",
+          color = Color.Black,
+          fontSize = 10.sp,
+          fontWeight = FontWeight.Bold,
+          modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
       }
     }
 
@@ -421,7 +486,21 @@ fun JokerVideoPlayer(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
           ) {
-            if (isLiveStream) {
+            if (isUsingLocalDemo) {
+              Surface(
+                color = JokerGold,
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.padding(end = 8.dp)
+              ) {
+                Text(
+                  text = "أوفلاين",
+                  color = Color.Black,
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+              }
+            } else if (isLiveStream) {
               Surface(
                 color = JokerLiveRed,
                 shape = RoundedCornerShape(4.dp),
@@ -755,14 +834,16 @@ fun openInExternalPlayer(
   title: String,
   resumePositionMs: Long = 0L
 ) {
-  val uri = if (videoUrl == JokerTvDataProvider.STREAM_LOCAL_RAW || videoUrl.startsWith("local", ignoreCase = true)) {
-    Uri.parse(JokerTvDataProvider.STREAM_REMOTE_OCEANS)
+  val resolvedUrl = if (videoUrl == JokerTvDataProvider.STREAM_LOCAL_RAW || videoUrl.startsWith("local", ignoreCase = true)) {
+    JokerTvDataProvider.STREAM_LIVE_SPORTS_HLS
   } else {
-    Uri.parse(videoUrl)
+    videoUrl
   }
+  val uri = Uri.parse(resolvedUrl)
+  val mimeType = if (resolvedUrl.lowercase().contains(".m3u8")) "application/x-mpegURL" else "video/*"
 
   val intent = Intent(Intent.ACTION_VIEW).apply {
-    setDataAndType(uri, "video/*")
+    setDataAndType(uri, mimeType)
     putExtra("title", title)
     putExtra("secure_uri", true)
     if (resumePositionMs > 1000L) {

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.CartoonItem
 import com.example.model.EgyptianMovie
 import com.example.model.FootballMatch
 import com.example.model.MediaType
@@ -73,6 +75,7 @@ sealed class SearchResultItem {
   data class MatchResult(val match: FootballMatch) : SearchResultItem()
   data class SeriesResult(val series: RamadanSeries) : SearchResultItem()
   data class MovieResult(val movie: EgyptianMovie) : SearchResultItem()
+  data class CartoonResult(val cartoon: CartoonItem) : SearchResultItem()
 }
 
 @Composable
@@ -81,11 +84,13 @@ fun AdvancedSearchSheet(
   allMatches: List<FootballMatch>,
   allSeries: List<RamadanSeries>,
   allMovies: List<EgyptianMovie>,
+  allCartoons: List<CartoonItem>,
   onClose: () -> Unit,
   onSelectChannel: (SportsChannel) -> Unit,
   onSelectMatch: (FootballMatch) -> Unit,
   onSelectSeries: (RamadanSeries) -> Unit,
   onSelectMovie: (EgyptianMovie) -> Unit,
+  onSelectCartoon: (CartoonItem) -> Unit,
   modifier: Modifier = Modifier
 ) {
   var searchQuery by remember { mutableStateOf("") }
@@ -93,12 +98,22 @@ fun AdvancedSearchSheet(
   var selectedYearFilter by remember { mutableStateOf("كل السنوات") }
   var selectedGenreFilter by remember { mutableStateOf("كل التصنيفات") }
 
-  val typeFilters = listOf("الكل", "قنوات رياضية", "مسلسلات رمضان", "أفلام سينما")
+  val typeFilters = listOf("الكل", "قنوات رياضية", "مسلسلات رمضان", "أفلام سينما", "كرتون وأنمي")
   val yearFilters = listOf("كل السنوات", "2025", "2024", "2023")
-  val genreFilters = listOf("كل التصنيفات", "أكشن", "كوميدي", "دراما", "تاريخي")
+  val genreFilters = listOf("كل التصنيفات", "أكشن", "كوميدي", "دراما", "تاريخي", "مغامرات", "عائلي")
 
   // Filtered Results calculation
-  val results = remember(searchQuery, selectedTypeFilter, selectedYearFilter, selectedGenreFilter) {
+  val results = remember(
+    searchQuery,
+    selectedTypeFilter,
+    selectedYearFilter,
+    selectedGenreFilter,
+    allChannels,
+    allMatches,
+    allSeries,
+    allMovies,
+    allCartoons
+  ) {
     val q = searchQuery.trim().lowercase()
     val list = mutableListOf<SearchResultItem>()
 
@@ -133,6 +148,22 @@ fun AdvancedSearchSheet(
         val matchesGenre = selectedGenreFilter == "كل التصنيفات" || movie.genre.contains(selectedGenreFilter)
         matchesQuery && matchesYear && matchesGenre
       }.forEach { list.add(SearchResultItem.MovieResult(it)) }
+    }
+
+    // Cartoons & Anime
+    if (selectedTypeFilter == "الكل" || selectedTypeFilter == "كرتون وأنمي") {
+      allCartoons.filter { cartoon ->
+        val matchesQuery = q.isEmpty() ||
+          cartoon.title.lowercase().contains(q) ||
+          cartoon.originalTitle.lowercase().contains(q) ||
+          cartoon.category.lowercase().contains(q) ||
+          cartoon.genre.lowercase().contains(q) ||
+          cartoon.dubbingStudio.lowercase().contains(q) ||
+          cartoon.dubbingLanguage.lowercase().contains(q)
+        val matchesYear = selectedYearFilter == "كل السنوات" || cartoon.releaseYear.toString() == selectedYearFilter
+        val matchesGenre = selectedGenreFilter == "كل التصنيفات" || cartoon.genre.contains(selectedGenreFilter)
+        matchesQuery && matchesYear && matchesGenre
+      }.forEach { list.add(SearchResultItem.CartoonResult(it)) }
     }
 
     list
@@ -393,6 +424,16 @@ fun AdvancedSearchSheet(
                 badge = "${item.movie.rating} ★",
                 badgeColor = JokerGold,
                 onClick = { onSelectMovie(item.movie) }
+              )
+            }
+            is SearchResultItem.CartoonResult -> {
+              SearchResultRow(
+                icon = Icons.Default.AutoAwesome,
+                title = item.cartoon.title,
+                subtitle = "${item.cartoon.dubbingLanguage} • ${item.cartoon.dubbingStudio} • ${item.cartoon.genre}",
+                badge = "${item.cartoon.rating} ★",
+                badgeColor = JokerCyanAccent,
+                onClick = { onSelectCartoon(item.cartoon) }
               )
             }
           }

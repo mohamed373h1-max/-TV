@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -54,11 +55,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +69,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,6 +80,7 @@ import com.example.ui.components.AdvancedSearchSheet
 import com.example.ui.components.NotificationsBottomSheet
 import com.example.ui.components.WatchHistoryModalSheet
 import com.example.ui.screens.ActiveDetailItem
+import com.example.ui.screens.CartoonsScreen
 import com.example.ui.screens.DetailPlayerScreen
 import com.example.ui.screens.FavoritesScreen
 import com.example.ui.screens.HomeScreen
@@ -147,6 +150,10 @@ class MainActivity : ComponentActivity() {
             val channel = viewModel.channels.find { it.id == targetId }
             channel?.let { viewModel.openDetail(ActiveDetailItem.Channel(it)) }
           }
+          MediaType.CARTOON -> {
+            val cartoon = viewModel.cartoonsList.find { it.id == targetId }
+            cartoon?.let { viewModel.openDetail(ActiveDetailItem.Cartoon(it)) }
+          }
         }
       } catch (e: Exception) {
         // ignore format errors
@@ -158,21 +165,22 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun JokerTvMainApp(viewModel: JokerViewModel) {
   val context = LocalContext.current
-  val currentTab by viewModel.currentTab.collectAsState()
-  val activeDetail by viewModel.activeDetail.collectAsState()
-  val isSearchOpen by viewModel.isSearchOpen.collectAsState()
-  val isNotificationsOpen by viewModel.isNotificationsOpen.collectAsState()
-  val favorites by viewModel.favoriteItems.collectAsState()
-  val comments by viewModel.userComments.collectAsState()
-  val watchHistory by viewModel.watchHistory.collectAsState()
-  val notifications by viewModel.notifications.collectAsState()
-  val unreadNotificationsCount by viewModel.unreadNotificationsCount.collectAsState()
+  val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
+  val activeDetail by viewModel.activeDetail.collectAsStateWithLifecycle()
+  val isSearchOpen by viewModel.isSearchOpen.collectAsStateWithLifecycle()
+  val isNotificationsOpen by viewModel.isNotificationsOpen.collectAsStateWithLifecycle()
+  val allChannels by viewModel.allChannels.collectAsStateWithLifecycle()
+  val favorites by viewModel.favoriteItems.collectAsStateWithLifecycle()
+  val comments by viewModel.userComments.collectAsStateWithLifecycle()
+  val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
+  val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+  val unreadNotificationsCount by viewModel.unreadNotificationsCount.collectAsStateWithLifecycle()
 
   var isHistoryOpen by remember { mutableStateOf(false) }
 
-  val seriesNotifyEnabled by viewModel.seriesNotifyEnabled.collectAsState()
-  val moviesNotifyEnabled by viewModel.moviesNotifyEnabled.collectAsState()
-  val matchesNotifyEnabled by viewModel.matchesNotifyEnabled.collectAsState()
+  val seriesNotifyEnabled by viewModel.seriesNotifyEnabled.collectAsStateWithLifecycle()
+  val moviesNotifyEnabled by viewModel.moviesNotifyEnabled.collectAsStateWithLifecycle()
+  val matchesNotifyEnabled by viewModel.matchesNotifyEnabled.collectAsStateWithLifecycle()
 
   // Permission Launcher for Android 13+ Notification Runtime Permission
   val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -203,6 +211,9 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
           onOpenSearch = { viewModel.openSearch() },
           onOpenNotifications = { viewModel.openNotifications() },
           onOpenHistory = { isHistoryOpen = true },
+          onOpenFavorites = { viewModel.setTab(NavTab.FAVORITES) },
+          isFavoritesActive = currentTab == NavTab.FAVORITES,
+          favoritesCount = favorites.size,
           unreadNotificationsCount = unreadNotificationsCount
         )
       }
@@ -211,8 +222,7 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
       if (activeDetail == null && !isSearchOpen && !isNotificationsOpen) {
         JokerBottomNavigationBar(
           currentTab = currentTab,
-          onTabSelected = { viewModel.setTab(it) },
-          favoritesCount = favorites.size
+          onTabSelected = { viewModel.setTab(it) }
         )
       }
     }
@@ -226,19 +236,22 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
       when (currentTab) {
         NavTab.HOME -> {
           HomeScreen(
-            channels = viewModel.channels,
+            channels = allChannels,
             matches = viewModel.matches,
             seriesList = viewModel.seriesList,
             moviesList = viewModel.moviesList,
+            cartoonsList = viewModel.cartoonsList,
             isFavorite = { viewModel.isFavorite(it) },
             onToggleFavorite = { viewModel.toggleFavorite(it) },
             onSelectChannel = { viewModel.openDetail(ActiveDetailItem.Channel(it)) },
             onSelectMatch = { viewModel.openDetail(ActiveDetailItem.Match(it)) },
             onSelectSeries = { viewModel.openDetail(ActiveDetailItem.Series(it)) },
             onSelectMovie = { viewModel.openDetail(ActiveDetailItem.Movie(it)) },
+            onSelectCartoon = { viewModel.openDetail(ActiveDetailItem.Cartoon(it)) },
             onNavigateToSports = { viewModel.setTab(NavTab.SPORTS) },
             onNavigateToRamadan = { viewModel.setTab(NavTab.RAMADAN) },
             onNavigateToMovies = { viewModel.setTab(NavTab.MOVIES) },
+            onNavigateToCartoons = { viewModel.setTab(NavTab.CARTOONS) },
             watchHistory = watchHistory,
             onSelectHistoryItem = { viewModel.openWatchHistoryItem(it) },
             onRemoveHistoryItem = { viewModel.removeWatchHistoryItem(it) },
@@ -247,12 +260,14 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
         }
         NavTab.SPORTS -> {
           SportsScreen(
-            channels = viewModel.channels,
+            channels = allChannels,
             matches = viewModel.matches,
             isFavorite = { viewModel.isFavorite(it) },
             onToggleFavorite = { viewModel.toggleFavorite(it) },
             onSelectChannel = { viewModel.openDetail(ActiveDetailItem.Channel(it)) },
-            onSelectMatch = { viewModel.openDetail(ActiveDetailItem.Match(it)) }
+            onSelectMatch = { viewModel.openDetail(ActiveDetailItem.Match(it)) },
+            onImportM3uInput = { input, title -> viewModel.importM3uInput(input, title) },
+            onRemoveCustomChannel = { viewModel.removeCustomChannel(it) }
           )
         }
         NavTab.RAMADAN -> {
@@ -271,12 +286,21 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
             onSelectMovie = { viewModel.openDetail(ActiveDetailItem.Movie(it)) }
           )
         }
+        NavTab.CARTOONS -> {
+          CartoonsScreen(
+            cartoonsList = viewModel.cartoonsList,
+            isFavorite = { viewModel.isFavorite(it) },
+            onToggleFavorite = { viewModel.toggleFavorite(it) },
+            onSelectCartoon = { viewModel.openDetail(ActiveDetailItem.Cartoon(it)) }
+          )
+        }
         NavTab.FAVORITES -> {
           FavoritesScreen(
             favoriteItems = favorites,
             onRemoveFavorite = { viewModel.toggleFavorite(it) },
             onOpenItem = { viewModel.openFavoriteItem(it) },
-            onExploreContent = { viewModel.setTab(NavTab.HOME) }
+            onExploreContent = { viewModel.setTab(NavTab.HOME) },
+            onClearAllFavorites = { viewModel.clearAllFavorites() }
           )
         }
       }
@@ -288,9 +312,11 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
           is ActiveDetailItem.Match -> detailItem.match.id
           is ActiveDetailItem.Series -> detailItem.series.id
           is ActiveDetailItem.Movie -> detailItem.movie.id
+          is ActiveDetailItem.Cartoon -> detailItem.cartoon.id
         }
         val resumePos = when (detailItem) {
           is ActiveDetailItem.Series -> viewModel.getResumePosition(detailItem.series.id, detailItem.initialEpisodeNumber)
+          is ActiveDetailItem.Cartoon -> viewModel.getResumePosition(detailItem.cartoon.id, detailItem.initialEpisodeNumber)
           is ActiveDetailItem.Movie -> viewModel.getResumePosition(detailItem.movie.id, null)
           is ActiveDetailItem.Channel -> viewModel.getResumePosition(detailItem.channel.id, null)
           is ActiveDetailItem.Match -> viewModel.getResumePosition(detailItem.match.id, null)
@@ -305,6 +331,7 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
               is ActiveDetailItem.Match -> viewModel.toggleFavorite(detailItem.match)
               is ActiveDetailItem.Series -> viewModel.toggleFavorite(detailItem.series)
               is ActiveDetailItem.Movie -> viewModel.toggleFavorite(detailItem.movie)
+              is ActiveDetailItem.Cartoon -> viewModel.toggleFavorite(detailItem.cartoon)
             }
           },
           onAddComment = { author, rating, text ->
@@ -319,15 +346,17 @@ fun JokerTvMainApp(viewModel: JokerViewModel) {
       // Advanced Search Fullscreen Overlay
       if (isSearchOpen) {
         AdvancedSearchSheet(
-          allChannels = viewModel.channels,
+          allChannels = allChannels,
           allMatches = viewModel.matches,
           allSeries = viewModel.seriesList,
           allMovies = viewModel.moviesList,
+          allCartoons = viewModel.cartoonsList,
           onClose = { viewModel.closeSearch() },
           onSelectChannel = { viewModel.openDetail(ActiveDetailItem.Channel(it)) },
           onSelectMatch = { viewModel.openDetail(ActiveDetailItem.Match(it)) },
           onSelectSeries = { viewModel.openDetail(ActiveDetailItem.Series(it)) },
-          onSelectMovie = { viewModel.openDetail(ActiveDetailItem.Movie(it)) }
+          onSelectMovie = { viewModel.openDetail(ActiveDetailItem.Movie(it)) },
+          onSelectCartoon = { viewModel.openDetail(ActiveDetailItem.Cartoon(it)) }
         )
       }
 
@@ -371,6 +400,9 @@ fun JokerTopAppBar(
   onOpenSearch: () -> Unit,
   onOpenNotifications: () -> Unit,
   onOpenHistory: () -> Unit,
+  onOpenFavorites: () -> Unit,
+  isFavoritesActive: Boolean,
+  favoritesCount: Int,
   unreadNotificationsCount: Int
 ) {
   Surface(
@@ -382,15 +414,18 @@ fun JokerTopAppBar(
       modifier = Modifier
         .fillMaxWidth()
         .statusBarsPadding()
-        .padding(horizontal = 14.dp, vertical = 10.dp),
+        .padding(horizontal = 12.dp, vertical = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween
     ) {
       // Branding: Logo & Title
-      Row(verticalAlignment = Alignment.CenterVertically) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.weight(1f)
+      ) {
         Box(
           modifier = Modifier
-            .size(38.dp)
+            .size(36.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(JokerPurplePrimary.copy(alpha = 0.2f))
             .border(1.dp, JokerPurplePrimary, RoundedCornerShape(10.dp)),
@@ -399,21 +434,22 @@ fun JokerTopAppBar(
           Image(
             painter = painterResource(id = R.drawable.ic_joker_tv_logo),
             contentDescription = "شعار جوكر TV",
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(30.dp)
           )
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(8.dp))
 
         Column {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = "جوكر TV",
               color = TextPrimary,
-              fontSize = 18.sp,
-              fontWeight = FontWeight.Black
+              fontSize = 16.sp,
+              fontWeight = FontWeight.Black,
+              maxLines = 1
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Surface(
               color = JokerLiveRed,
               shape = RoundedCornerShape(4.dp)
@@ -421,7 +457,7 @@ fun JokerTopAppBar(
               Text(
                 text = "LIVE",
                 color = Color.White,
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
               )
@@ -429,96 +465,146 @@ fun JokerTopAppBar(
           }
 
           Text(
-            text = "قنوات مشفرة • مسلسلات • سينما",
+            text = "كورة • مسلسلات • سينما • كرتون",
             color = TextSecondary,
-            fontSize = 11.sp
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
           )
         }
       }
 
-      // Action Buttons: Watch History + Notification Bell + Advanced Search
+      // Action Buttons: Favorites + Watch History + Notification Bell + Search
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
       ) {
+        // Favorites Shortcut Button with live Room badge
+        IconButton(
+          onClick = onOpenFavorites,
+          modifier = Modifier
+            .size(48.dp)
+            .testTag("nav_favorites")
+        ) {
+          Box(
+            modifier = Modifier
+              .size(38.dp)
+              .clip(CircleShape)
+              .background(if (isFavoritesActive) JokerPurplePrimary else JokerSurfaceVariant)
+              .border(1.dp, if (isFavoritesActive) JokerPurpleLight else BorderSubtle, CircleShape),
+            contentAlignment = Alignment.Center
+          ) {
+            if (favoritesCount > 0) {
+              BadgedBox(
+                badge = {
+                  Badge(containerColor = JokerLiveRed) {
+                    Text("$favoritesCount", color = Color.White, fontSize = 8.sp)
+                  }
+                }
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Favorite,
+                  contentDescription = "المفضلة",
+                  tint = if (isFavoritesActive) Color.White else JokerLiveRed,
+                  modifier = Modifier.size(18.dp)
+                )
+              }
+            } else {
+              Icon(
+                imageVector = Icons.Default.Favorite,
+                contentDescription = "المفضلة",
+                tint = if (isFavoritesActive) Color.White else TextSecondary,
+                modifier = Modifier.size(18.dp)
+              )
+            }
+          }
+        }
+
         // Watch History Button
         IconButton(
           onClick = onOpenHistory,
           modifier = Modifier
-            .size(38.dp)
-            .clip(CircleShape)
-            .background(JokerSurfaceVariant)
-            .border(1.dp, BorderSubtle, CircleShape)
+            .size(48.dp)
             .testTag("watch_history_button")
         ) {
-          Icon(
-            imageVector = Icons.Default.History,
-            contentDescription = "سجل المشاهدة",
-            tint = JokerCyanAccent,
-            modifier = Modifier.size(19.dp)
-          )
+          Box(
+            modifier = Modifier
+              .size(38.dp)
+              .clip(CircleShape)
+              .background(JokerSurfaceVariant)
+              .border(1.dp, BorderSubtle, CircleShape),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.History,
+              contentDescription = "سجل المشاهدة",
+              tint = JokerCyanAccent,
+              modifier = Modifier.size(18.dp)
+            )
+          }
         }
 
         // Notification Bell Icon with Badge
         IconButton(
           onClick = onOpenNotifications,
           modifier = Modifier
-            .size(38.dp)
-            .clip(CircleShape)
-            .background(JokerSurfaceVariant)
-            .border(1.dp, BorderSubtle, CircleShape)
+            .size(48.dp)
             .testTag("notification_button")
         ) {
-          if (unreadNotificationsCount > 0) {
-            BadgedBox(
-              badge = {
-                Badge(containerColor = JokerLiveRed) {
-                  Text("$unreadNotificationsCount", color = Color.White, fontSize = 8.sp)
+          Box(
+            modifier = Modifier
+              .size(38.dp)
+              .clip(CircleShape)
+              .background(JokerSurfaceVariant)
+              .border(1.dp, BorderSubtle, CircleShape),
+            contentAlignment = Alignment.Center
+          ) {
+            if (unreadNotificationsCount > 0) {
+              BadgedBox(
+                badge = {
+                  Badge(containerColor = JokerLiveRed) {
+                    Text("$unreadNotificationsCount", color = Color.White, fontSize = 8.sp)
+                  }
                 }
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Notifications,
+                  contentDescription = "الإشعارات",
+                  tint = JokerPurpleLight,
+                  modifier = Modifier.size(18.dp)
+                )
               }
-            ) {
+            } else {
               Icon(
                 imageVector = Icons.Default.Notifications,
                 contentDescription = "الإشعارات",
-                tint = JokerPurpleLight,
+                tint = TextSecondary,
                 modifier = Modifier.size(18.dp)
               )
             }
-          } else {
-            Icon(
-              imageVector = Icons.Default.Notifications,
-              contentDescription = "الإشعارات",
-              tint = TextSecondary,
-              modifier = Modifier.size(18.dp)
-            )
           }
         }
 
         // Advanced Search Button
-        Surface(
-          color = JokerSurfaceVariant,
-          shape = RoundedCornerShape(20.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
+        IconButton(
+          onClick = onOpenSearch,
           modifier = Modifier
+            .size(48.dp)
             .testTag("advanced_search_button")
-            .clickable { onOpenSearch() }
         ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+          Box(
+            modifier = Modifier
+              .size(38.dp)
+              .clip(CircleShape)
+              .background(JokerSurfaceVariant)
+              .border(1.dp, BorderSubtle, CircleShape),
+            contentAlignment = Alignment.Center
           ) {
             Icon(
               imageVector = Icons.Default.Search,
               contentDescription = "بحث وفلاتر",
               tint = JokerPurpleLight,
-              modifier = Modifier.size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-              text = "بحث",
-              color = TextPrimary,
-              fontSize = 12.sp,
-              fontWeight = FontWeight.Medium
+              modifier = Modifier.size(18.dp)
             )
           }
         }
@@ -530,8 +616,7 @@ fun JokerTopAppBar(
 @Composable
 fun JokerBottomNavigationBar(
   currentTab: NavTab,
-  onTabSelected: (NavTab) -> Unit,
-  favoritesCount: Int
+  onTabSelected: (NavTab) -> Unit
 ) {
   NavigationBar(
     containerColor = JokerSurface,
@@ -545,7 +630,7 @@ fun JokerBottomNavigationBar(
       selected = currentTab == NavTab.HOME,
       onClick = { onTabSelected(NavTab.HOME) },
       icon = { Icon(Icons.Default.Home, contentDescription = "الرئيسية") },
-      label = { Text("الرئيسية", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+      label = { Text("الرئيسية", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) },
       colors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.White,
         selectedTextColor = JokerPurpleLight,
@@ -559,8 +644,8 @@ fun JokerBottomNavigationBar(
     NavigationBarItem(
       selected = currentTab == NavTab.SPORTS,
       onClick = { onTabSelected(NavTab.SPORTS) },
-      icon = { Icon(Icons.Default.SportsSoccer, contentDescription = "قنوات الكورة") },
-      label = { Text("قنوات الكورة", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+      icon = { Icon(Icons.Default.SportsSoccer, contentDescription = "الكورة") },
+      label = { Text("الكورة", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) },
       colors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.White,
         selectedTextColor = JokerPurpleLight,
@@ -574,8 +659,8 @@ fun JokerBottomNavigationBar(
     NavigationBarItem(
       selected = currentTab == NavTab.RAMADAN,
       onClick = { onTabSelected(NavTab.RAMADAN) },
-      icon = { Icon(Icons.Default.Tv, contentDescription = "مسلسلات رمضان") },
-      label = { Text("مسلسلات رمضان", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+      icon = { Icon(Icons.Default.Tv, contentDescription = "مسلسلات") },
+      label = { Text("مسلسلات", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) },
       colors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.White,
         selectedTextColor = JokerPurpleLight,
@@ -589,8 +674,8 @@ fun JokerBottomNavigationBar(
     NavigationBarItem(
       selected = currentTab == NavTab.MOVIES,
       onClick = { onTabSelected(NavTab.MOVIES) },
-      icon = { Icon(Icons.Default.LocalMovies, contentDescription = "سينما مصرية") },
-      label = { Text("سينما مصرية", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+      icon = { Icon(Icons.Default.LocalMovies, contentDescription = "أفلام") },
+      label = { Text("أفلام", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) },
       colors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.White,
         selectedTextColor = JokerPurpleLight,
@@ -602,24 +687,10 @@ fun JokerBottomNavigationBar(
     )
 
     NavigationBarItem(
-      selected = currentTab == NavTab.FAVORITES,
-      onClick = { onTabSelected(NavTab.FAVORITES) },
-      icon = {
-        if (favoritesCount > 0) {
-          BadgedBox(
-            badge = {
-              Badge(containerColor = JokerLiveRed) {
-                Text("$favoritesCount", color = Color.White, fontSize = 9.sp)
-              }
-            }
-          ) {
-            Icon(Icons.Default.Favorite, contentDescription = "المفضلة")
-          }
-        } else {
-          Icon(Icons.Default.Favorite, contentDescription = "المفضلة")
-        }
-      },
-      label = { Text("المفضلة", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+      selected = currentTab == NavTab.CARTOONS,
+      onClick = { onTabSelected(NavTab.CARTOONS) },
+      icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "كرتون") },
+      label = { Text("كرتون", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) },
       colors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.White,
         selectedTextColor = JokerPurpleLight,
@@ -627,7 +698,7 @@ fun JokerBottomNavigationBar(
         unselectedIconColor = TextMuted,
         unselectedTextColor = TextMuted
       ),
-      modifier = Modifier.testTag("nav_favorites")
+      modifier = Modifier.testTag("nav_cartoons")
     )
   }
 }

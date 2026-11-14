@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -386,6 +387,7 @@ fun NotificationCardItem(
     MediaType.SERIES -> Icons.Default.Tv
     MediaType.MOVIE -> Icons.Default.MovieCreation
     MediaType.MATCH, MediaType.CHANNEL -> Icons.Default.SportsSoccer
+    MediaType.CARTOON -> Icons.Default.AutoAwesome
   }
 
   Card(

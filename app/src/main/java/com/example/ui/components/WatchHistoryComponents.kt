@@ -64,6 +64,7 @@ import com.example.ui.theme.JokerBackground
 import com.example.ui.theme.JokerCyanAccent
 import com.example.ui.theme.JokerGold
 import com.example.ui.theme.JokerLiveRed
+import com.example.ui.theme.JokerNeonGreen
 import com.example.ui.theme.JokerPurpleLight
 import com.example.ui.theme.JokerPurplePrimary
 import com.example.ui.theme.JokerSurface
@@ -230,6 +231,7 @@ fun WatchHistoryCard(
             MediaType.MOVIE -> JokerCyanAccent
             MediaType.MATCH -> JokerLiveRed
             MediaType.CHANNEL -> JokerGold
+            MediaType.CARTOON -> JokerNeonGreen
           }.copy(alpha = 0.9f),
           shape = RoundedCornerShape(bottomEnd = 8.dp),
           modifier = Modifier.align(Alignment.TopStart)
@@ -240,8 +242,9 @@ fun WatchHistoryCard(
               MediaType.MOVIE -> "فيلم"
               MediaType.MATCH -> "مباراة"
               MediaType.CHANNEL -> "قناة"
+              MediaType.CARTOON -> "كرتون"
             },
-            color = if (item.mediaType == MediaType.MOVIE) Color.Black else Color.White,
+            color = if (item.mediaType == MediaType.MOVIE || item.mediaType == MediaType.CARTOON) Color.Black else Color.White,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -343,13 +346,14 @@ fun WatchHistoryModalSheet(
   onDismiss: () -> Unit
 ) {
   var selectedFilter by remember { mutableStateOf("الكل") }
-  val filters = listOf("الكل", "مسلسلات رمضان", "أفلام سينما", "مباريات وقنوات")
+  val filters = listOf("الكل", "مسلسلات رمضان", "أفلام سينما", "كرتون وأنمي", "مباريات وقنوات")
 
   val filteredList = remember(selectedFilter, watchHistory) {
     when (selectedFilter) {
       "الكل" -> watchHistory
       "مسلسلات رمضان" -> watchHistory.filter { it.mediaType == MediaType.SERIES }
       "أفلام سينما" -> watchHistory.filter { it.mediaType == MediaType.MOVIE }
+      "كرتون وأنمي" -> watchHistory.filter { it.mediaType == MediaType.CARTOON }
       "مباريات وقنوات" -> watchHistory.filter { it.mediaType == MediaType.MATCH || it.mediaType == MediaType.CHANNEL }
       else -> watchHistory
     }

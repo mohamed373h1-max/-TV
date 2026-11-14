@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.JokerTvDataProvider
+import com.example.data.M3uPlaylistParser
 import com.example.data.UserPreferencesRepository
+import com.example.model.CartoonItem
 import com.example.model.EgyptianMovie
 import com.example.model.FavoriteItem
 import com.example.model.FootballMatch
@@ -21,12 +23,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 enum class NavTab {
   HOME,
   SPORTS,
   RAMADAN,
   MOVIES,
+  CARTOONS,
   FAVORITES
 }
 
@@ -36,12 +40,30 @@ class JokerViewModel(application: Application) : AndroidViewModel(application) {
   private val notificationManager = JokerNotificationManager(application)
 
   val channels: List<SportsChannel> = JokerTvDataProvider.sportsChannels
+  val customChannels: StateFlow<List<SportsChannel>> = repository.customChannels
+    .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+  val allChannels: StateFlow<List<SportsChannel>> = repository.customChannels
+    .map { custom -> custom + channels }
+    .stateIn(viewModelScope, SharingStarted.Lazily, channels)
   val matches: List<FootballMatch> = JokerTvDataProvider.todayMatches
   val seriesList: List<RamadanSeries> = JokerTvDataProvider.ramadanSeries
   val moviesList: List<EgyptianMovie> = JokerTvDataProvider.egyptianMovies
+  val cartoonsList: List<CartoonItem> = JokerTvDataProvider.cartoonsList
 
   val favoriteItems: StateFlow<List<FavoriteItem>> = repository.favoriteItems
-    .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+  val favoriteSportsChannels: StateFlow<List<FavoriteItem>> = repository.favoriteSportsChannels
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+  val favoriteMovies: StateFlow<List<FavoriteItem>> = repository.favoriteMovies
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+  init {
+    viewModelScope.launch {
+      repository.initializeFavorites()
+    }
+  }
 
   val userComments: StateFlow<List<UserComment>> = repository.userComments
     .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -106,7 +128,7 @@ class JokerViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun isFavorite(id: String): Boolean {
-    return repository.isFavorite(id)
+    return favoriteItems.value.any { it.id == id }
   }
 
   fun toggleFavorite(item: Any) {
@@ -147,16 +169,33 @@ class JokerViewModel(application: Application) : AndroidViewModel(application) {
         badge = "فيلم",
         rating = item.rating
       )
+      is CartoonItem -> FavoriteItem(
+        id = item.id,
+        mediaType = MediaType.CARTOON,
+        title = item.title,
+        subtitle = "${item.dubbingLanguage} • ${item.dubbingStudio}",
+        imageUrl = item.posterUrl,
+        badge = item.category,
+        rating = item.rating
+      )
       is FavoriteItem -> item
       else -> return
     }
-    repository.toggleFavorite(favItem)
+    viewModelScope.launch {
+      repository.toggleFavorite(favItem)
+    }
+  }
+
+  fun clearAllFavorites() {
+    viewModelScope.launch {
+      repository.clearFavorites()
+    }
   }
 
   fun openFavoriteItem(item: FavoriteItem) {
     when (item.mediaType) {
       MediaType.CHANNEL -> {
-        val ch = channels.find { it.id == item.id } ?: channels.first()
+        val ch = allChannels.value.find { it.id == item.id } ?: allChannels.value.first()
         openDetail(ActiveDetailItem.Channel(ch))
       }
       MediaType.MATCH -> {
@@ -170,6 +209,10 @@ class JokerViewModel(application: Application) : AndroidViewModel(application) {
       MediaType.MOVIE -> {
         val mov = moviesList.find { it.id == item.id } ?: moviesList.first()
         openDetail(ActiveDetailItem.Movie(mov))
+      }
+      MediaType.CARTOON -> {
+        val c = cartoonsList.find { it.id == item.id } ?: cartoonsList.first()
+        openDetail(ActiveDetailItem.Cartoon(c))
       }
     }
   }
@@ -194,6 +237,10 @@ class JokerViewModel(application: Application) : AndroidViewModel(application) {
       MediaType.CHANNEL -> {
         val channel = channels.find { it.id == notification.targetId } ?: channels.first()
         openDetail(ActiveDetailItem.Channel(channel))
+      }
+      MediaType.CARTOON -> {
+        val cartoon = cartoonsList.find { it.id == notification.targetId } ?: cartoonsList.first()
+        openDetail(ActiveDetailItem.Cartoon(cartoon))
       }
     }
   }
@@ -268,9 +315,72 @@ class JokerViewModel(application: Application) : AndroidViewModel(application) {
         openDetail(ActiveDetailItem.Match(match))
       }
       MediaType.CHANNEL -> {
-        val channel = channels.find { it.id == item.contentId } ?: channels.first()
+        val channel = allChannels.value.find { it.id == item.contentId } ?: allChannels.value.first()
         openDetail(ActiveDetailItem.Channel(channel))
       }
+      MediaType.CARTOON -> {
+        val cartoon = cartoonsList.find { it.id == item.contentId } ?: cartoonsList.first()
+        openDetail(ActiveDetailItem.Cartoon(cartoon, initialEpisodeNumber = item.episodeNumber ?: 1))
+      }
     }
+  }
+
+  fun addCustomStreamChannel(name: String, streamUrl: String, openImmediately: Boolean = true): Boolean {
+    if (!M3uPlaylistParser.isValidStreamUrl(streamUrl)) return false
+    val channel = M3uPlaylistParser.createSingleCustomChannel(name = name, streamUrl = streamUrl)
+    repository.addCustomChannels(listOf(channel))
+    if (openImmediately) {
+      openDetail(ActiveDetailItem.Channel(channel))
+    }
+    return true
+  }
+
+  suspend fun importM3uInput(rawInput: String, customTitle: String = ""): Result<Int> {
+    val trimmed = rawInput.trim()
+    if (trimmed.isBlank()) return Result.failure(IllegalArgumentException("أدخل رابط بث أو نص M3U صالح"))
+
+    // 1. Direct #EXTM3U / #EXTINF playlist text pasted by user
+    if (trimmed.contains("#EXTM3U", ignoreCase = true) || trimmed.contains("#EXTINF", ignoreCase = true)) {
+      val parsed = M3uPlaylistParser.parseM3uContent(trimmed)
+      return if (parsed.isNotEmpty()) {
+        repository.addCustomChannels(parsed)
+        Result.success(parsed.size)
+      } else {
+        Result.failure(IllegalStateException("لم يتم العثور على روابط صالحة داخل القائمة"))
+      }
+    }
+
+    // 2. Single HTTP/HTTPS/RTMP/RTSP URL
+    if (M3uPlaylistParser.isValidStreamUrl(trimmed)) {
+      val lower = trimmed.lowercase()
+      val looksLikePlaylistFile = lower.endsWith(".m3u") || lower.contains("type=m3u")
+      if (looksLikePlaylistFile) {
+        val fetched = M3uPlaylistParser.fetchPlaylistFromUrl(trimmed)
+        if (fetched.isSuccess) {
+          val text = fetched.getOrDefault("")
+          if (text.contains("#EXTM3U", ignoreCase = true) || text.contains("#EXTINF", ignoreCase = true)) {
+            val parsed = M3uPlaylistParser.parseM3uContent(text)
+            if (parsed.isNotEmpty()) {
+              repository.addCustomChannels(parsed)
+              return Result.success(parsed.size)
+            }
+          }
+        }
+      }
+
+      // Direct stream URL (.m3u8, .mp4, .ts, etc.)
+      val channel = M3uPlaylistParser.createSingleCustomChannel(
+        name = customTitle.ifBlank { "بث مباشر مخصص" },
+        streamUrl = trimmed
+      )
+      repository.addCustomChannels(listOf(channel))
+      return Result.success(1)
+    }
+
+    return Result.failure(IllegalArgumentException("صيغة الرابط غير مدعومة (يجب أن يبدأ بـ http:// أو https:// أو #EXTM3U)"))
+  }
+
+  fun removeCustomChannel(channelId: String) {
+    repository.removeCustomChannel(channelId)
   }
 }

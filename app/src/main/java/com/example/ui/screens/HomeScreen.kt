@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.LiveTv
@@ -51,14 +52,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.model.CartoonItem
 import com.example.model.EgyptianMovie
 import com.example.model.FootballMatch
 import com.example.model.RamadanSeries
 import com.example.model.SportsChannel
 import com.example.model.WatchHistoryItem
+import com.example.ui.components.CartoonCard
 import com.example.ui.components.ContinueWatchingShelf
 import com.example.ui.components.MatchCard
 import com.example.ui.components.MovieCard
@@ -93,15 +97,18 @@ fun HomeScreen(
   matches: List<FootballMatch>,
   seriesList: List<RamadanSeries>,
   moviesList: List<EgyptianMovie>,
+  cartoonsList: List<CartoonItem>,
   isFavorite: (String) -> Boolean,
   onToggleFavorite: (Any) -> Unit,
   onSelectChannel: (SportsChannel) -> Unit,
   onSelectMatch: (FootballMatch) -> Unit,
   onSelectSeries: (RamadanSeries) -> Unit,
   onSelectMovie: (EgyptianMovie) -> Unit,
+  onSelectCartoon: (CartoonItem) -> Unit,
   onNavigateToSports: () -> Unit,
   onNavigateToRamadan: () -> Unit,
   onNavigateToMovies: () -> Unit,
+  onNavigateToCartoons: () -> Unit,
   watchHistory: List<WatchHistoryItem> = emptyList(),
   onSelectHistoryItem: (WatchHistoryItem) -> Unit = {},
   onRemoveHistoryItem: (String) -> Unit = {},
@@ -130,6 +137,13 @@ fun HomeScreen(
         tag = "شباك التذاكر",
         drawableRes = R.drawable.hero_cinema_banner,
         actionText = "شاهد الفيلم"
+      ),
+      HeroBannerItem(
+        title = "عالم الكرتون والأنمي (مدبلج بالعربي)",
+        subtitle = "المحقق كونان، ون بيس، ناروتو، غامبول والأسد الملك مدبلجة بالعربي",
+        tag = "مدبلج عربي 100%",
+        drawableRes = R.drawable.img_hero_cartoons_banner,
+        actionText = "شاهد الكرتون"
       )
     )
   }
@@ -237,6 +251,7 @@ fun HomeScreen(
                     0 -> channels.firstOrNull()?.let { onSelectChannel(it) }
                     1 -> seriesList.firstOrNull()?.let { onSelectSeries(it) }
                     2 -> moviesList.firstOrNull()?.let { onSelectMovie(it) }
+                    3 -> cartoonsList.firstOrNull()?.let { onSelectCartoon(it) }
                   }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = JokerPurplePrimary),
@@ -282,7 +297,7 @@ fun HomeScreen(
         modifier = Modifier
           .fillMaxWidth()
           .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         QuickCategoryPill(
           icon = Icons.Default.SportsSoccer,
@@ -293,16 +308,23 @@ fun HomeScreen(
         )
         QuickCategoryPill(
           icon = Icons.Default.Tv,
-          title = "مسلسلات رمضان",
+          title = "مسلسلات",
           color = JokerPurplePrimary,
           onClick = onNavigateToRamadan,
           modifier = Modifier.weight(1f)
         )
         QuickCategoryPill(
           icon = Icons.Default.LocalMovies,
-          title = "سينما مصرية",
+          title = "سينما",
           color = JokerCyanAccent,
           onClick = onNavigateToMovies,
+          modifier = Modifier.weight(1f)
+        )
+        QuickCategoryPill(
+          icon = Icons.Default.AutoAwesome,
+          title = "كرتون",
+          color = JokerGold,
+          onClick = onNavigateToCartoons,
           modifier = Modifier.weight(1f)
         )
       }
@@ -422,6 +444,31 @@ fun HomeScreen(
         }
       }
     }
+
+    // 7. Cartoons & Anime Section (Arabic Dubbed)
+    item {
+      Column(modifier = Modifier.fillMaxWidth()) {
+        SectionTitleRow(
+          title = "عالم الكرتون والأنمي (مدبلج بالعربي)",
+          actionText = "كل الكرتون",
+          onAction = onNavigateToCartoons
+        )
+
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 16.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          items(cartoonsList, key = { it.id }) { cartoon ->
+            CartoonCard(
+              cartoon = cartoon,
+              isFavorite = isFavorite(cartoon.id),
+              onToggleFavorite = { onToggleFavorite(cartoon) },
+              onClick = { onSelectCartoon(cartoon) }
+            )
+          }
+        }
+      }
+    }
   }
 
   if (showAllHistorySheet) {
@@ -517,7 +564,9 @@ fun QuickCategoryPill(
         text = title,
         color = TextPrimary,
         fontSize = 11.sp,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
       )
     }
   }

@@ -2,22 +2,33 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.local.FavoriteDao
+import com.example.data.local.JokerDatabase
 import com.example.model.FavoriteItem
 import com.example.model.MediaType
+import com.example.model.ServerInfo
+import com.example.model.SportsChannel
 import com.example.model.UserComment
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-class UserPreferencesRepository(context: Context) {
+class UserPreferencesRepository(
+  context: Context,
+  favoriteDao: FavoriteDao = JokerDatabase.getInstance(context).favoriteDao()
+) {
 
   private val prefs: SharedPreferences =
     context.getSharedPreferences("joker_tv_prefs", Context.MODE_PRIVATE)
 
-  private val _favoriteItems = MutableStateFlow<List<FavoriteItem>>(emptyList())
-  val favoriteItems: StateFlow<List<FavoriteItem>> = _favoriteItems.asStateFlow()
+  val favoritesRepository = FavoritesRepository(favoriteDao)
+
+  val favoriteItems: Flow<List<FavoriteItem>> = favoritesRepository.allFavorites
+  val favoriteSportsChannels: Flow<List<FavoriteItem>> = favoritesRepository.favoriteSportsChannels
+  val favoriteMovies: Flow<List<FavoriteItem>> = favoritesRepository.favoriteMovies
 
   private val _userComments = MutableStateFlow<List<UserComment>>(emptyList())
   val userComments: StateFlow<List<UserComment>> = _userComments.asStateFlow()
@@ -25,51 +36,66 @@ class UserPreferencesRepository(context: Context) {
   private val _watchHistory = MutableStateFlow<List<com.example.model.WatchHistoryItem>>(emptyList())
   val watchHistory: StateFlow<List<com.example.model.WatchHistoryItem>> = _watchHistory.asStateFlow()
 
+  private val _customChannels = MutableStateFlow<List<SportsChannel>>(emptyList())
+  val customChannels: StateFlow<List<SportsChannel>> = _customChannels.asStateFlow()
+
   init {
-    loadFavorites()
     loadComments()
     loadWatchHistory()
+    loadCustomChannels()
   }
 
-  private fun loadFavorites() {
-    val jsonString = prefs.getString("favorites_json", null)
-    if (jsonString.isNullOrEmpty()) {
-      // Default initial favorites so the screen is immediately populated with popular picks
-      val defaults = listOf(
-        FavoriteItem(
-          id = "bein_1",
-          mediaType = MediaType.CHANNEL,
-          title = "beIN SPORTS 1 HD",
-          subtitle = "قمة الدوري الإنجليزي",
-          imageUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400&auto=format&fit=crop&q=80",
-          badge = "مباشر 4K",
-          rating = 4.9f
-        ),
-        FavoriteItem(
-          id = "series_hashashin",
-          mediaType = MediaType.SERIES,
-          title = "الحشاشين",
-          subtitle = "كريم عبد العزيز - 30 حلقة",
-          imageUrl = "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500&auto=format&fit=crop&q=80",
-          badge = "رمضان 2024",
-          rating = 4.9f
-        ),
-        FavoriteItem(
-          id = "mov_welad_rizk_3",
-          mediaType = MediaType.MOVIE,
-          title = "ولاد رزق 3: القاضية",
-          subtitle = "أحمد عز وعمرو يوسف",
-          imageUrl = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&auto=format&fit=crop&q=80",
-          badge = "سينما 2024",
-          rating = 4.9f
-        )
-      )
-      _favoriteItems.value = defaults
-      saveFavorites(defaults)
-      return
+  suspend fun initializeFavorites() {
+    val alreadySeeded = prefs.getBoolean("favorites_seeded_room", false)
+    if (alreadySeeded) return
+
+    val legacyJson = prefs.getString("favorites_json", null)
+    val itemsToSeed = if (!legacyJson.isNullOrEmpty()) {
+      parseLegacyFavorites(legacyJson)
+    } else {
+      defaultFavorites()
     }
 
-    try {
+    if (itemsToSeed.isNotEmpty()) {
+      favoritesRepository.seedFavoritesIfNeeded(itemsToSeed)
+    }
+    prefs.edit().putBoolean("favorites_seeded_room", true).apply()
+  }
+
+  private fun defaultFavorites(): List<FavoriteItem> {
+    return listOf(
+      FavoriteItem(
+        id = "bein_1",
+        mediaType = MediaType.CHANNEL,
+        title = "beIN SPORTS 1 HD",
+        subtitle = "قمة الدوري الإنجليزي ودوري أبطال أوروبا",
+        imageUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400&auto=format&fit=crop&q=80",
+        badge = "مباشر 4K",
+        rating = 4.9f
+      ),
+      FavoriteItem(
+        id = "series_hashashin",
+        mediaType = MediaType.SERIES,
+        title = "الحشاشين",
+        subtitle = "كريم عبد العزيز - 30 حلقة",
+        imageUrl = "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500&auto=format&fit=crop&q=80",
+        badge = "رمضان 2024",
+        rating = 4.9f
+      ),
+      FavoriteItem(
+        id = "mov_welad_rizk_3",
+        mediaType = MediaType.MOVIE,
+        title = "ولاد رزق 3: القاضية",
+        subtitle = "أحمد عز وعمرو يوسف",
+        imageUrl = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&auto=format&fit=crop&q=80",
+        badge = "سينما 2024",
+        rating = 4.9f
+      )
+    )
+  }
+
+  private fun parseLegacyFavorites(jsonString: String): List<FavoriteItem> {
+    return try {
       val jsonArray = JSONArray(jsonString)
       val list = mutableListOf<FavoriteItem>()
       for (i in 0 until jsonArray.length()) {
@@ -86,47 +112,34 @@ class UserPreferencesRepository(context: Context) {
           )
         )
       }
-      _favoriteItems.value = list
+      list
     } catch (e: Exception) {
-      _favoriteItems.value = emptyList()
+      emptyList()
     }
   }
 
-  private fun saveFavorites(items: List<FavoriteItem>) {
-    val jsonArray = JSONArray()
-    for (item in items) {
-      val obj = JSONObject().apply {
-        put("id", item.id)
-        put("mediaType", item.mediaType.name)
-        put("title", item.title)
-        put("subtitle", item.subtitle)
-        put("imageUrl", item.imageUrl)
-        put("badge", item.badge)
-        item.rating?.let { put("rating", it.toDouble()) }
-      }
-      jsonArray.put(obj)
-    }
-    prefs.edit().putString("favorites_json", jsonArray.toString()).apply()
+  suspend fun toggleFavorite(item: FavoriteItem): Boolean {
+    return favoritesRepository.toggleFavorite(item)
   }
 
-  fun toggleFavorite(item: FavoriteItem): Boolean {
-    val current = _favoriteItems.value.toMutableList()
-    val existsIndex = current.indexOfFirst { it.id == item.id }
-    val isNowFavorite: Boolean
-    if (existsIndex >= 0) {
-      current.removeAt(existsIndex)
-      isNowFavorite = false
-    } else {
-      current.add(0, item)
-      isNowFavorite = true
-    }
-    _favoriteItems.value = current
-    saveFavorites(current)
-    return isNowFavorite
+  suspend fun addFavorite(item: FavoriteItem) {
+    favoritesRepository.addFavorite(item)
   }
 
-  fun isFavorite(itemId: String): Boolean {
-    return _favoriteItems.value.any { it.id == itemId }
+  suspend fun removeFavorite(itemId: String) {
+    favoritesRepository.removeFavorite(itemId)
+  }
+
+  suspend fun clearFavorites() {
+    favoritesRepository.clearAll()
+  }
+
+  suspend fun isFavorite(itemId: String): Boolean {
+    return favoritesRepository.isFavorite(itemId)
+  }
+
+  fun observeIsFavorite(itemId: String): Flow<Boolean> {
+    return favoritesRepository.observeIsFavorite(itemId)
   }
 
   private fun loadComments() {
@@ -323,5 +336,89 @@ class UserPreferencesRepository(context: Context) {
 
   fun getCommentsForItem(itemId: String): List<UserComment> {
     return _userComments.value.filter { it.itemId == itemId }
+  }
+
+  private fun loadCustomChannels() {
+    val jsonString = prefs.getString("custom_channels_json", null) ?: return
+    try {
+      val jsonArray = JSONArray(jsonString)
+      val list = mutableListOf<SportsChannel>()
+      for (i in 0 until jsonArray.length()) {
+        val obj = jsonArray.getJSONObject(i)
+        val id = obj.getString("id")
+        val name = obj.getString("name")
+        val category = obj.optString("category", "قنواتك الخاصة")
+        val logoUrl = obj.optString("logoUrl", "")
+        val streamUrl = obj.getString("streamUrl")
+        val qualityBadge = obj.optString("qualityBadge", "IPTV")
+        val fallbackServers = JokerTvDataProvider.createDefaultServers(
+          contentId = id,
+          streamIndexOffset = i,
+          mediaType = MediaType.CHANNEL
+        )
+        val userServer = ServerInfo(
+          id = "${id}_user_primary",
+          name = "رابط البث المضاف ($name)",
+          quality = qualityBadge,
+          streamUrl = streamUrl,
+          pingMs = 14,
+          isVip = true,
+          isOnline = true
+        )
+        list.add(
+          SportsChannel(
+            id = id,
+            name = name,
+            category = category,
+            logoUrl = logoUrl,
+            isLive = true,
+            currentEvent = obj.optString("currentEvent", "بث مباشر مضاف بواسطة المستخدم"),
+            qualityBadge = qualityBadge,
+            servers = listOf(userServer) + fallbackServers.take(3)
+          )
+        )
+      }
+      _customChannels.value = list
+    } catch (_: Exception) {
+      _customChannels.value = emptyList()
+    }
+  }
+
+  private fun saveCustomChannels(list: List<SportsChannel>) {
+    val jsonArray = JSONArray()
+    for (ch in list) {
+      val primaryUrl = ch.servers.firstOrNull()?.streamUrl ?: continue
+      val obj = JSONObject().apply {
+        put("id", ch.id)
+        put("name", ch.name)
+        put("category", ch.category)
+        put("logoUrl", ch.logoUrl)
+        put("streamUrl", primaryUrl)
+        put("qualityBadge", ch.qualityBadge)
+        put("currentEvent", ch.currentEvent)
+      }
+      jsonArray.put(obj)
+    }
+    prefs.edit().putString("custom_channels_json", jsonArray.toString()).apply()
+  }
+
+  fun addCustomChannels(newChannels: List<SportsChannel>) {
+    if (newChannels.isEmpty()) return
+    val updated = (newChannels + _customChannels.value).distinctBy {
+      it.servers.firstOrNull()?.streamUrl ?: it.id
+    }.take(100)
+    _customChannels.value = updated
+    saveCustomChannels(updated)
+  }
+
+  fun removeCustomChannel(channelId: String) {
+    val updated = _customChannels.value.filterNot { it.id == channelId }
+    _customChannels.value = updated
+    saveCustomChannels(updated)
+  }
+
+  fun clearCustomChannels() {
+    _customChannels.value = emptyList()
+    prefs.edit().remove("custom_channels_json").apply()
   }
 }

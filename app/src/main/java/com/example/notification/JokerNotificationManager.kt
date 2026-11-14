@@ -224,7 +224,7 @@ class JokerNotificationManager(private val context: Context) {
   ) {
     // Check user preference
     val enabled = when (targetType) {
-      MediaType.SERIES -> _seriesNotifyEnabled.value
+      MediaType.SERIES, MediaType.CARTOON -> _seriesNotifyEnabled.value
       MediaType.MOVIE -> _moviesNotifyEnabled.value
       MediaType.MATCH, MediaType.CHANNEL -> _matchesNotifyEnabled.value
     }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -22,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddLink
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -32,16 +35,20 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.SportsSoccer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,9 +70,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.model.CartoonItem
 import com.example.model.EgyptianMovie
 import com.example.model.Episode
 import com.example.model.FootballMatch
+import com.example.model.MediaType
 import com.example.model.RamadanSeries
 import com.example.model.ServerInfo
 import com.example.model.SportsChannel
@@ -80,6 +90,7 @@ import com.example.ui.theme.JokerLiveRed
 import com.example.ui.theme.JokerNeonGreen
 import com.example.ui.theme.JokerPurpleLight
 import com.example.ui.theme.JokerPurplePrimary
+import com.example.ui.theme.JokerSurface
 import com.example.ui.theme.JokerSurfaceElevated
 import com.example.ui.theme.JokerSurfaceVariant
 import com.example.ui.theme.TextMuted
@@ -91,6 +102,7 @@ sealed class ActiveDetailItem {
   data class Match(val match: FootballMatch) : ActiveDetailItem()
   data class Series(val series: RamadanSeries, val initialEpisodeNumber: Int = 1) : ActiveDetailItem()
   data class Movie(val movie: EgyptianMovie) : ActiveDetailItem()
+  data class Cartoon(val cartoon: CartoonItem, val initialEpisodeNumber: Int = 1) : ActiveDetailItem()
 }
 
 @Composable
@@ -114,6 +126,7 @@ fun DetailPlayerScreen(
     is ActiveDetailItem.Match -> "${item.match.homeTeam} ضد ${item.match.awayTeam}"
     is ActiveDetailItem.Series -> item.series.title
     is ActiveDetailItem.Movie -> item.movie.title
+    is ActiveDetailItem.Cartoon -> item.cartoon.title
   }
 
   val itemId = when (item) {
@@ -121,23 +134,39 @@ fun DetailPlayerScreen(
     is ActiveDetailItem.Match -> item.match.id
     is ActiveDetailItem.Series -> item.series.id
     is ActiveDetailItem.Movie -> item.movie.id
+    is ActiveDetailItem.Cartoon -> item.cartoon.id
   }
 
-  val defaultEpisodeNum = if (item is ActiveDetailItem.Series) item.initialEpisodeNumber else 1
+  val defaultEpisodeNum = when (item) {
+    is ActiveDetailItem.Series -> item.initialEpisodeNumber
+    is ActiveDetailItem.Cartoon -> item.initialEpisodeNumber
+    else -> 1
+  }
   var selectedEpisodeNumber by remember(item) { mutableIntStateOf(defaultEpisodeNum) }
-  var episodeRangeFilter by remember { mutableStateOf("الحلقات 1 - 10") }
-  var autoLaunchPhonePlayer by remember { mutableStateOf(false) }
+  var episodeRangeFilter by remember(item) { mutableStateOf("الحلقات 1 - 10") }
+  var autoLaunchPhonePlayer by remember(item) { mutableStateOf(false) }
   var activeResumePosition by remember(item, selectedEpisodeNumber) { mutableStateOf(initialResumePosition) }
   var showResumeBanner by remember(item, selectedEpisodeNumber) { mutableStateOf(initialResumePosition > 3000L) }
 
-  val defaultServers = when (item) {
+  val baseServers = when (item) {
     is ActiveDetailItem.Channel -> item.channel.servers
     is ActiveDetailItem.Match -> item.match.servers
     is ActiveDetailItem.Series -> item.series.episodes.getOrNull(selectedEpisodeNumber - 1)?.servers ?: item.series.episodes.first().servers
     is ActiveDetailItem.Movie -> item.movie.servers
+    is ActiveDetailItem.Cartoon -> item.cartoon.episodes.getOrNull(selectedEpisodeNumber - 1)?.servers ?: item.cartoon.episodes.first().servers
   }
 
-  var selectedServerIndex by remember(item) { mutableIntStateOf(0) }
+  var customStreamServer by remember(item, selectedEpisodeNumber) { mutableStateOf<ServerInfo?>(null) }
+  var showCustomUrlDialog by remember { mutableStateOf(false) }
+  var customUrlText by remember { mutableStateOf("") }
+  var customUrlError by remember { mutableStateOf<String?>(null) }
+
+  val defaultServers = remember(baseServers, customStreamServer) {
+    val cs = customStreamServer
+    if (cs != null) listOf(cs) + baseServers else baseServers
+  }
+
+  var selectedServerIndex by remember(item, selectedEpisodeNumber) { mutableIntStateOf(0) }
   val selectedServer = defaultServers.getOrElse(selectedServerIndex) { defaultServers.first() }
 
   val isLive = when (item) {
@@ -145,6 +174,7 @@ fun DetailPlayerScreen(
     is ActiveDetailItem.Match -> item.match.isLive
     is ActiveDetailItem.Series -> false
     is ActiveDetailItem.Movie -> false
+    is ActiveDetailItem.Cartoon -> false
   }
 
   val currentSubtitle = when (item) {
@@ -152,15 +182,27 @@ fun DetailPlayerScreen(
     is ActiveDetailItem.Match -> "${item.match.championship} • معلق: ${item.match.commentator}"
     is ActiveDetailItem.Series -> "الحلقة $selectedEpisodeNumber من ${item.series.episodesCount}"
     is ActiveDetailItem.Movie -> "سينما ${item.movie.releaseYear} • ${item.movie.durationMinutes} دقيقة"
+    is ActiveDetailItem.Cartoon -> if (item.cartoon.isMovie) {
+      "${item.cartoon.dubbingLanguage} • فيلم كامل (${item.cartoon.dubbingStudio})"
+    } else {
+      "${item.cartoon.dubbingLanguage} • الحلقة $selectedEpisodeNumber من ${item.cartoon.episodesCount}"
+    }
   }
 
-  // Auto-launch into user's phone player (VLC / MX Player) whenever an item or episode is chosen
+  val hasEpisodes = (item is ActiveDetailItem.Series) || (item is ActiveDetailItem.Cartoon && !item.cartoon.isMovie)
+  val totalEpisodesCount = when (item) {
+    is ActiveDetailItem.Series -> item.series.episodesCount
+    is ActiveDetailItem.Cartoon -> item.cartoon.episodesCount
+    else -> 0
+  }
+
+  // Auto-launch into user's phone player (VLC / MX Player) only if explicitly toggled
   LaunchedEffect(item, selectedEpisodeNumber) {
     if (autoLaunchPhonePlayer) {
       launchExternalVideoPlayer(
         context = context,
         videoUrl = selectedServer.streamUrl,
-        title = if (item is ActiveDetailItem.Series) "$title - الحلقة $selectedEpisodeNumber" else title,
+        title = if (hasEpisodes) "$title - الحلقة $selectedEpisodeNumber" else title,
         resumePositionMs = activeResumePosition
       )
     }
@@ -171,6 +213,7 @@ fun DetailPlayerScreen(
     is ActiveDetailItem.Match -> 4.8f
     is ActiveDetailItem.Series -> item.series.rating
     is ActiveDetailItem.Movie -> item.movie.rating
+    is ActiveDetailItem.Cartoon -> item.cartoon.rating
   }
 
   val ratingCount = when (item) {
@@ -178,24 +221,105 @@ fun DetailPlayerScreen(
     is ActiveDetailItem.Match -> 6200
     is ActiveDetailItem.Series -> item.series.ratingCount
     is ActiveDetailItem.Movie -> item.movie.ratingCount
+    is ActiveDetailItem.Cartoon -> item.cartoon.ratingCount
   }
 
-  LazyColumn(
+  if (showCustomUrlDialog) {
+    AlertDialog(
+      onDismissRequest = { showCustomUrlDialog = false },
+      containerColor = JokerSurface,
+      title = {
+        Text(
+          text = "تشغيل رابط بث مباشر مخصص",
+          color = TextPrimary,
+          fontSize = 15.sp,
+          fontWeight = FontWeight.Bold
+        )
+      },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(
+            text = "أدخل رابط فيديو مباشر (.m3u8 أو .mp4) ليتم تشغيله فوراً داخل المشغل.",
+            color = TextSecondary,
+            fontSize = 12.sp
+          )
+          OutlinedTextField(
+            value = customUrlText,
+            onValueChange = {
+              customUrlText = it
+              customUrlError = null
+            },
+            label = { Text("رابط البث (https://...m3u8)", fontSize = 12.sp) },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = JokerCyanAccent,
+              unfocusedBorderColor = BorderSubtle,
+              focusedTextColor = TextPrimary,
+              unfocusedTextColor = TextPrimary
+            ),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("detail_custom_url_input")
+          )
+          customUrlError?.let { err ->
+            Text(text = err, color = JokerLiveRed, fontSize = 11.sp)
+          }
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val trimmed = customUrlText.trim()
+            if (com.example.data.M3uPlaylistParser.isValidStreamUrl(trimmed)) {
+              customStreamServer = ServerInfo(
+                id = "${itemId}_custom_${System.currentTimeMillis()}",
+                name = "رابطك الخاص (مباشر)",
+                quality = if (trimmed.lowercase().contains(".m3u8")) "HLS Live" else "Custom",
+                streamUrl = trimmed,
+                pingMs = 10,
+                isVip = true,
+                isOnline = true
+              )
+              selectedServerIndex = 0
+              showCustomUrlDialog = false
+            } else {
+              customUrlError = "الرابط يجب أن يبدأ بـ http:// أو https://"
+            }
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = JokerPurplePrimary)
+        ) {
+          Text("تشغيل الآن", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showCustomUrlDialog = false }) {
+          Text("إلغاء", color = TextSecondary, fontSize = 12.sp)
+        }
+      }
+    )
+  }
+
+  Column(
     modifier = modifier
       .fillMaxSize()
-      .background(JokerBackground),
-    contentPadding = PaddingValues(bottom = 36.dp)
+      .background(JokerBackground)
   ) {
-    // 1. Top Bar with back button
-    item {
+    // 1. Pinned Top Bar with back button
+    Surface(color = JokerSurface) {
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(horizontal = 12.dp, vertical = 8.dp),
+          .statusBarsPadding()
+          .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        IconButton(onClick = onBack) {
+        IconButton(
+          onClick = onBack,
+          modifier = Modifier
+            .size(48.dp)
+            .testTag("detail_back_button")
+        ) {
           Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "رجوع",
@@ -208,10 +332,17 @@ fun DetailPlayerScreen(
           color = TextPrimary,
           fontSize = 16.sp,
           fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
           modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
         )
 
-        IconButton(onClick = onToggleFavorite) {
+        IconButton(
+          onClick = onToggleFavorite,
+          modifier = Modifier
+            .size(48.dp)
+            .testTag("detail_favorite_button")
+        ) {
           Icon(
             imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             contentDescription = "المفضلة",
@@ -221,61 +352,68 @@ fun DetailPlayerScreen(
       }
     }
 
-    // 2. Built-in Video Player (Primary, immediate playback)
-    item {
-      val seriesTotalEpisodes = if (item is ActiveDetailItem.Series) item.series.episodesCount else 0
+    // 2. Pinned Built-in Video Player (stays active while browsing episodes, servers & comments below)
+    JokerVideoPlayer(
+      title = title,
+      subtitle = currentSubtitle,
+      servers = defaultServers,
+      selectedServer = selectedServer,
+      onServerSelected = { srv ->
+        val idx = defaultServers.indexOfFirst { it.id == srv.id }
+        if (idx >= 0) selectedServerIndex = idx
+      },
+      isLiveStream = isLive,
+      initialPositionMs = activeResumePosition,
+      onProgressUpdate = { posMs, durMs ->
+        val historyItem = com.example.model.WatchHistoryItem(
+          id = when (item) {
+            is ActiveDetailItem.Series -> "${item.series.id}_ep_$selectedEpisodeNumber"
+            is ActiveDetailItem.Cartoon -> "${item.cartoon.id}_ep_${if (item.cartoon.isMovie) 0 else selectedEpisodeNumber}"
+            is ActiveDetailItem.Movie -> "${item.movie.id}_ep_0"
+            is ActiveDetailItem.Channel -> "${item.channel.id}_ep_0"
+            is ActiveDetailItem.Match -> "${item.match.id}_ep_0"
+          },
+          contentId = itemId,
+          mediaType = when (item) {
+            is ActiveDetailItem.Series -> MediaType.SERIES
+            is ActiveDetailItem.Cartoon -> MediaType.CARTOON
+            is ActiveDetailItem.Movie -> MediaType.MOVIE
+            is ActiveDetailItem.Channel -> MediaType.CHANNEL
+            is ActiveDetailItem.Match -> MediaType.MATCH
+          },
+          title = title,
+          subtitle = currentSubtitle,
+          imageUrl = when (item) {
+            is ActiveDetailItem.Series -> item.series.posterUrl
+            is ActiveDetailItem.Cartoon -> item.cartoon.posterUrl
+            is ActiveDetailItem.Movie -> item.movie.posterUrl
+            is ActiveDetailItem.Channel -> item.channel.logoUrl
+            is ActiveDetailItem.Match -> item.match.homeLogo
+          },
+          episodeNumber = if (hasEpisodes) selectedEpisodeNumber else null,
+          lastPositionMs = posMs,
+          totalDurationMs = durMs,
+          watchedAtTimestamp = System.currentTimeMillis()
+        )
+        onRecordProgress(historyItem)
+      },
+      hasNextEpisode = hasEpisodes && selectedEpisodeNumber < totalEpisodesCount,
+      hasPreviousEpisode = hasEpisodes && selectedEpisodeNumber > 1,
+      onNextEpisode = if (hasEpisodes && selectedEpisodeNumber < totalEpisodesCount) {
+        { selectedEpisodeNumber++ }
+      } else null,
+      onPreviousEpisode = if (hasEpisodes && selectedEpisodeNumber > 1) {
+        { selectedEpisodeNumber-- }
+      } else null
+    )
 
-      JokerVideoPlayer(
-        title = title,
-        subtitle = currentSubtitle,
-        servers = defaultServers,
-        selectedServer = selectedServer,
-        onServerSelected = { srv ->
-          val idx = defaultServers.indexOfFirst { it.id == srv.id }
-          if (idx >= 0) selectedServerIndex = idx
-        },
-        isLiveStream = isLive,
-        initialPositionMs = activeResumePosition,
-        onProgressUpdate = { posMs, durMs ->
-          val historyItem = com.example.model.WatchHistoryItem(
-            id = when (item) {
-              is ActiveDetailItem.Series -> "${item.series.id}_ep_$selectedEpisodeNumber"
-              is ActiveDetailItem.Movie -> "${item.movie.id}_ep_0"
-              is ActiveDetailItem.Channel -> "${item.channel.id}_ep_0"
-              is ActiveDetailItem.Match -> "${item.match.id}_ep_0"
-            },
-            contentId = itemId,
-            mediaType = when (item) {
-              is ActiveDetailItem.Series -> com.example.model.MediaType.SERIES
-              is ActiveDetailItem.Movie -> com.example.model.MediaType.MOVIE
-              is ActiveDetailItem.Channel -> com.example.model.MediaType.CHANNEL
-              is ActiveDetailItem.Match -> com.example.model.MediaType.MATCH
-            },
-            title = title,
-            subtitle = if (item is ActiveDetailItem.Series) "الحلقة $selectedEpisodeNumber من ${item.series.episodesCount}" else currentSubtitle,
-            imageUrl = when (item) {
-              is ActiveDetailItem.Series -> item.series.posterUrl
-              is ActiveDetailItem.Movie -> item.movie.posterUrl
-              is ActiveDetailItem.Channel -> item.channel.logoUrl
-              is ActiveDetailItem.Match -> item.match.homeLogo
-            },
-            episodeNumber = if (item is ActiveDetailItem.Series) selectedEpisodeNumber else null,
-            lastPositionMs = posMs,
-            totalDurationMs = durMs,
-            watchedAtTimestamp = System.currentTimeMillis()
-          )
-          onRecordProgress(historyItem)
-        },
-        hasNextEpisode = item is ActiveDetailItem.Series && selectedEpisodeNumber < seriesTotalEpisodes,
-        hasPreviousEpisode = item is ActiveDetailItem.Series && selectedEpisodeNumber > 1,
-        onNextEpisode = if (item is ActiveDetailItem.Series && selectedEpisodeNumber < seriesTotalEpisodes) {
-          { selectedEpisodeNumber++ }
-        } else null,
-        onPreviousEpisode = if (item is ActiveDetailItem.Series && selectedEpisodeNumber > 1) {
-          { selectedEpisodeNumber-- }
-        } else null
-      )
-    }
+    // Scrollable details, servers, episodes, synopsis & comments below the pinned player
+    LazyColumn(
+      modifier = Modifier
+        .weight(1f)
+        .fillMaxWidth(),
+      contentPadding = PaddingValues(top = 8.dp, bottom = 36.dp)
+    ) {
 
     // 2.5 Real Match Scoreboard & Live Status Header (if Match)
     if (item is ActiveDetailItem.Match) {
@@ -655,7 +793,7 @@ fun DetailPlayerScreen(
                 launchExternalVideoPlayer(
                   context = context,
                   videoUrl = selectedServer.streamUrl,
-                  title = if (item is ActiveDetailItem.Series) "$title - الحلقة $selectedEpisodeNumber" else title,
+                  title = if (hasEpisodes) "$title - الحلقة $selectedEpisodeNumber" else title,
                   resumePositionMs = activeResumePosition
                 )
               },
@@ -698,7 +836,10 @@ fun DetailPlayerScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.weight(1f)
+            ) {
               Icon(
                 imageVector = Icons.Default.Dns,
                 contentDescription = null,
@@ -707,24 +848,56 @@ fun DetailPlayerScreen(
               )
               Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = "سيرفرات البث القوية (مضادة للتقطيع)",
+                text = "سيرفرات البث (${defaultServers.size})",
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
               )
             }
 
-            Surface(
-              color = JokerNeonGreen.copy(alpha = 0.2f),
-              shape = RoundedCornerShape(6.dp)
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-              Text(
-                text = "سيرفر نشط ${selectedServer.pingMs}ms",
-                color = JokerNeonGreen,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-              )
+              Surface(
+                color = JokerCyanAccent.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                  .clickable { showCustomUrlDialog = true }
+                  .testTag("detail_add_custom_stream_button")
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.AddLink,
+                    contentDescription = "إضافة رابط مخصص",
+                    tint = JokerCyanAccent,
+                    modifier = Modifier.size(14.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "رابط M3U8",
+                    color = JokerCyanAccent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                  )
+                }
+              }
+
+              Surface(
+                color = if (selectedServer.isOnline) JokerNeonGreen.copy(alpha = 0.2f) else JokerGold.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(6.dp)
+              ) {
+                Text(
+                  text = if (selectedServer.isOnline) "أونلاين ${selectedServer.pingMs}ms" else "أوفلاين تجريبي",
+                  color = if (selectedServer.isOnline) JokerNeonGreen else JokerGold,
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                )
+              }
             }
           }
 
@@ -744,7 +917,7 @@ fun DetailPlayerScreen(
                     launchExternalVideoPlayer(
                       context = context,
                       videoUrl = server.streamUrl,
-                      title = if (item is ActiveDetailItem.Series) "$title - الحلقة $selectedEpisodeNumber" else title
+                      title = if (hasEpisodes) "$title - الحلقة $selectedEpisodeNumber" else title
                     )
                   }
                 }
@@ -781,22 +954,31 @@ fun DetailPlayerScreen(
       }
     }
 
-    // 5. Series Episodes Complete Library (All 30 Episodes with one-click phone player launch)
-    if (item is ActiveDetailItem.Series) {
+    // 5. Series & Cartoon Episodes Complete Library
+    val episodesList: List<Episode> = when (item) {
+      is ActiveDetailItem.Series -> item.series.episodes
+      is ActiveDetailItem.Cartoon -> if (item.cartoon.isMovie) emptyList() else item.cartoon.episodes
+      else -> emptyList()
+    }
+
+    if (episodesList.isNotEmpty()) {
       item {
-        val totalCount = item.series.episodesCount
+        val totalCount = episodesList.size
         val rangeFilters = when {
+          totalCount > 30 -> listOf("الحلقات 1 - 10", "الحلقات 11 - 20", "الحلقات 21 - 30", "الحلقات 31 - $totalCount", "عرض كل الحلقات")
           totalCount > 20 -> listOf("الحلقات 1 - 10", "الحلقات 11 - 20", "الحلقات 21 - $totalCount", "عرض كل الحلقات")
           totalCount > 10 -> listOf("الحلقات 1 - 10", "الحلقات 11 - $totalCount", "عرض كل الحلقات")
           else -> listOf("عرض كل الحلقات")
         }
 
-        val filteredEpisodes = remember(episodeRangeFilter, selectedEpisodeNumber, item.series.episodes) {
+        val filteredEpisodes = remember(episodeRangeFilter, episodesList) {
           when (episodeRangeFilter) {
-            "الحلقات 1 - 10" -> item.series.episodes.filter { it.number in 1..10 }
-            "الحلقات 11 - 20" -> item.series.episodes.filter { it.number in 11..20 }
-            "الحلقات 21 - $totalCount" -> item.series.episodes.filter { it.number in 21..totalCount }
-            else -> item.series.episodes
+            "الحلقات 1 - 10" -> episodesList.filter { it.number in 1..10 }
+            "الحلقات 11 - 20" -> episodesList.filter { it.number in 11..20 }
+            "الحلقات 21 - 30" -> episodesList.filter { it.number in 21..30 }
+            "الحلقات 21 - $totalCount" -> episodesList.filter { it.number in 21..totalCount }
+            "الحلقات 31 - $totalCount" -> episodesList.filter { it.number in 31..totalCount }
+            else -> episodesList
           }
         }
 
@@ -813,7 +995,7 @@ fun DetailPlayerScreen(
           ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
               Text(
-                text = "جميع الحلقات كاملة",
+                text = if (item is ActiveDetailItem.Cartoon) "جميع الحلقات (مدبلجة بالعربي)" else "جميع الحلقات كاملة",
                 color = TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
@@ -884,13 +1066,14 @@ fun DetailPlayerScreen(
 
           Spacer(modifier = Modifier.height(10.dp))
 
-          // Episodes List / Cards: Clicking any episode launches phone's external video player
+          // Episodes List / Cards: Clicking plays episode immediately in pinned player
           Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             filteredEpisodes.forEach { ep ->
               val isCurrent = ep.number == selectedEpisodeNumber
               Card(
                 modifier = Modifier
                   .fillMaxWidth()
+                  .testTag("episode_card_${ep.number}")
                   .clickable {
                     selectedEpisodeNumber = ep.number
                     activeResumePosition = 0L
@@ -948,8 +1131,8 @@ fun DetailPlayerScreen(
                       )
                       Spacer(modifier = Modifier.height(2.dp))
                       Text(
-                        text = "${ep.duration} • اضغط للتشغيل في مشغل هاتفك",
-                        color = JokerCyanAccent,
+                        text = "${ep.duration} • ${if (isCurrent) "يتم التشغيل الآن" else "اضغط للمشاهدة الفورية"}",
+                        color = if (isCurrent) JokerNeonGreen else JokerCyanAccent,
                         fontSize = 10.sp
                       )
                     }
@@ -1062,6 +1245,53 @@ fun DetailPlayerScreen(
                 fontSize = 12.sp
               )
             }
+            is ActiveDetailItem.Cartoon -> {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.AutoAwesome,
+                  contentDescription = null,
+                  tint = JokerNeonGreen,
+                  modifier = Modifier.size(18.dp)
+                )
+                Text(
+                  text = if (item.cartoon.isMovie) "قصة فيلم الأنميشن" else "قصة العمل والدبلجة العربية",
+                  color = TextPrimary,
+                  fontSize = 15.sp,
+                  fontWeight = FontWeight.Bold
+                )
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                text = item.cartoon.synopsis,
+                color = TextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 20.sp
+              )
+              Spacer(modifier = Modifier.height(10.dp))
+              Surface(
+                color = JokerNeonGreen.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, JokerNeonGreen.copy(alpha = 0.4f))
+              ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+                  Text(
+                    text = "اللغة: ${item.cartoon.dubbingLanguage} • ${item.cartoon.dubbingStudio}",
+                    color = JokerNeonGreen,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "الاسم العالمي: ${item.cartoon.originalTitle} • ${item.cartoon.ageRating}",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                  )
+                }
+              }
+            }
             is ActiveDetailItem.Match -> {
               Text(
                 text = "تفاصيل المباراة والملعب",
@@ -1106,6 +1336,7 @@ fun DetailPlayerScreen(
         comments = comments,
         onAddComment = onAddComment
       )
+    }
     }
   }
 }

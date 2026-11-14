@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LiveTv
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.model.CartoonItem
 import com.example.model.EgyptianMovie
 import com.example.model.FootballMatch
 import com.example.model.RamadanSeries
@@ -673,6 +676,149 @@ fun MovieCard(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = "${movie.durationMinutes} دقيقة • ${movie.genre}",
+          color = TextSecondary,
+          fontSize = 10.sp,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+      }
+    }
+  }
+}
+
+@Composable
+fun CartoonCard(
+  cartoon: CartoonItem,
+  isFavorite: Boolean,
+  onToggleFavorite: () -> Unit,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Card(
+    modifier = modifier
+      .width(155.dp)
+      .testTag("cartoon_card_${cartoon.id}")
+      .clickable { onClick() },
+    colors = CardDefaults.cardColors(containerColor = JokerSurfaceVariant),
+    shape = RoundedCornerShape(16.dp),
+    border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
+  ) {
+    Column {
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .aspectRatio(2f / 3f)
+          .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+      ) {
+        AsyncImage(
+          model = ImageRequest.Builder(LocalContext.current)
+            .data(cartoon.posterUrl)
+            .crossfade(true)
+            .build(),
+          contentDescription = cartoon.title,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.fillMaxSize()
+        )
+
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .background(
+              Brush.verticalGradient(
+                colors = listOf(
+                  Color.Black.copy(alpha = 0.55f),
+                  Color.Transparent,
+                  Color.Black.copy(alpha = 0.88f)
+                )
+              )
+            )
+        )
+
+        // Arabic Dubbed Badge
+        Surface(
+          color = JokerNeonGreen,
+          shape = RoundedCornerShape(bottomEnd = 8.dp),
+          modifier = Modifier.align(Alignment.TopStart)
+        ) {
+          Text(
+            text = cartoon.dubbingLanguage,
+            color = Color.Black,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+          )
+        }
+
+        // Favorite button with accessible touch area
+        IconButton(
+          onClick = onToggleFavorite,
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .size(48.dp)
+            .testTag("favorite_cartoon_${cartoon.id}")
+        ) {
+          Icon(
+            imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = "تفضيل",
+            tint = if (isFavorite) JokerLiveRed else Color.White,
+            modifier = Modifier.size(20.dp)
+          )
+        }
+
+        // Bottom row: Rating + Episodes count / Movie badge
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = Icons.Default.Star,
+              contentDescription = null,
+              tint = JokerGold,
+              modifier = Modifier.size(13.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+              text = "${cartoon.rating}",
+              color = Color.White,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold
+            )
+          }
+
+          Surface(
+            color = JokerPurplePrimary.copy(alpha = 0.9f),
+            shape = RoundedCornerShape(6.dp)
+          ) {
+            Text(
+              text = if (cartoon.isMovie) "فيلم كامل" else "${cartoon.episodesCount} حلقة",
+              color = Color.White,
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+            )
+          }
+        }
+      }
+
+      Column(modifier = Modifier.padding(8.dp)) {
+        Text(
+          text = cartoon.title,
+          color = TextPrimary,
+          fontSize = 13.sp,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+          text = "${cartoon.category} • ${cartoon.dubbingStudio}",
           color = TextSecondary,
           fontSize = 10.sp,
           maxLines = 1,

@@ -1,8 +1,10 @@
 package com.example.data
 
+import com.example.model.CartoonItem
 import com.example.model.EgyptianMovie
 import com.example.model.Episode
 import com.example.model.FootballMatch
+import com.example.model.MediaType
 import com.example.model.RamadanSeries
 import com.example.model.ServerInfo
 import com.example.model.SportsChannel
@@ -10,49 +12,101 @@ import com.example.model.UserComment
 
 object JokerTvDataProvider {
 
-  // Highly reliable working stream sources (both local zero-latency resource and verified HTTP 200 public CDN links)
+  // Verified live HTTP 200 public streams (tested HLS manifests + open MP4 feeds) + local offline backup
   const val STREAM_LOCAL_RAW = "LOCAL_RAW"
+  const val STREAM_LIVE_SPORTS_HLS = "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8"
+  const val STREAM_LIVE_ARABIC_HLS = "https://live-hls-web-aja.getaj.net/AJA/index.m3u8"
+  const val STREAM_ACTION_FILM_HLS = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8"
+  const val STREAM_CINEMA_REEL_HLS = "https://cdn.theoplayer.com/video/star_wars_episode_vii-the_force_awakens_official_comic-con_2015_reel_(2015)/index.m3u8"
+  const val STREAM_JW_HLS = "https://cdn.jwplayer.com/manifests/pZxWPRg4.m3u8"
   const val STREAM_REMOTE_OCEANS = "https://vjs.zencdn.net/v/oceans.mp4"
   const val STREAM_REMOTE_SINTEL = "https://media.w3.org/2010/05/sintel/trailer.mp4"
-  const val STREAM_REMOTE_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+  const val STREAM_REMOTE_SINTEL_480 = "https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4"
+  const val STREAM_REMOTE_OPEN_MP4 = "https://media.w3.org/2010/05/video/movie_300.mp4"
 
-  fun createDefaultServers(contentId: String, streamIndexOffset: Int = 0): List<ServerInfo> {
+  private val sportsStreams = listOf(
+    STREAM_LIVE_SPORTS_HLS,
+    STREAM_LIVE_ARABIC_HLS,
+    STREAM_ACTION_FILM_HLS,
+    STREAM_REMOTE_OCEANS
+  )
+
+  private val seriesStreams = listOf(
+    STREAM_ACTION_FILM_HLS,
+    STREAM_CINEMA_REEL_HLS,
+    STREAM_LIVE_ARABIC_HLS,
+    STREAM_JW_HLS,
+    STREAM_REMOTE_OPEN_MP4
+  )
+
+  private val movieStreams = listOf(
+    STREAM_CINEMA_REEL_HLS,
+    STREAM_ACTION_FILM_HLS,
+    STREAM_JW_HLS,
+    STREAM_REMOTE_OCEANS,
+    STREAM_REMOTE_OPEN_MP4
+  )
+
+  private val cartoonStreams = listOf(
+    STREAM_REMOTE_SINTEL,
+    STREAM_REMOTE_SINTEL_480,
+    STREAM_JW_HLS,
+    STREAM_ACTION_FILM_HLS
+  )
+
+  fun createDefaultServers(
+    contentId: String,
+    streamIndexOffset: Int = 0,
+    mediaType: MediaType = MediaType.CHANNEL
+  ): List<ServerInfo> {
+    val pool = when (mediaType) {
+      MediaType.CHANNEL, MediaType.MATCH -> sportsStreams
+      MediaType.SERIES -> seriesStreams
+      MediaType.MOVIE -> movieStreams
+      MediaType.CARTOON -> cartoonStreams
+    }
+
+    val safeOffset = ((streamIndexOffset % pool.size) + pool.size) % pool.size
+    val url1 = pool[safeOffset % pool.size]
+    val url2 = pool[(safeOffset + 1) % pool.size]
+    val url3 = pool[(safeOffset + 2) % pool.size]
+
     return listOf(
       ServerInfo(
         id = "${contentId}_srv1",
-        name = "سيرفر جوكر 1 (FHD - فائق السرعة مباشر)",
-        quality = "FHD 1080p 60fps",
-        streamUrl = STREAM_LOCAL_RAW,
-        pingMs = 12,
+        name = "سيرفر جوكر 1 (FHD - بث مباشر HLS)",
+        quality = "FHD 1080p",
+        streamUrl = url1,
+        pingMs = 18,
         isVip = true,
         isOnline = true
       ),
       ServerInfo(
         id = "${contentId}_srv2",
-        name = "سيرفر جوكر 2 (HD - بدون تقطيع سحابي)",
+        name = "سيرفر جوكر 2 (HD - احتياطي سريع)",
         quality = "HD 720p",
-        streamUrl = STREAM_REMOTE_OCEANS,
-        pingMs = 26,
+        streamUrl = url2,
+        pingMs = 24,
         isVip = false,
         isOnline = true
       ),
       ServerInfo(
         id = "${contentId}_srv3",
-        name = "سيرفر جوكر 3 (SD - للنت الضعيف وباقات الموبايل)",
+        name = "سيرفر جوكر 3 (SD - للنت الضعيف)",
         quality = "SD 480p",
-        streamUrl = STREAM_REMOTE_SINTEL,
-        pingMs = 16,
+        streamUrl = url3,
+        pingMs = 31,
         isVip = false,
         isOnline = true
       ),
       ServerInfo(
         id = "${contentId}_srv4",
-        name = "سيرفر جوكر 4 (VIP 4K - بث مباشر HLS)",
-        quality = "4K Ultra VIP",
-        streamUrl = STREAM_REMOTE_HLS,
-        pingMs = 34,
-        isVip = true,
-        isOnline = true
+        name = "سيرفر أوفلاين احتياطي (فيديو تجريبي محلي)",
+        quality = "تجريبي محلي",
+        streamUrl = STREAM_LOCAL_RAW,
+        pingMs = 5,
+        isVip = false,
+        isOnline = false
       )
     )
   }
@@ -355,7 +409,7 @@ object JokerTvDataProvider {
         number = num,
         title = epTitle,
         duration = "${40 + (num % 12)} دقيقة",
-        servers = createDefaultServers("${seriesId}_ep$num", num - 1)
+        servers = createDefaultServers("${seriesId}_ep$num", num - 1, MediaType.SERIES)
       )
     }
   }
@@ -517,7 +571,7 @@ object JokerTvDataProvider {
       cast = listOf("أحمد عز", "عمرو يوسف", "كريم قاسم", "آسر ياسين", "علي صبحي", "محمد لطفي"),
       synopsis = "بعد سنوات من الانفصال، يعود ولاد رزق لتنفيذ عملية سطو خطيرة ومصيرية في الرياض بمشاركة شبح قديم يطاردهم، في أضخم إنتاج سينمائي عربي حطم الأرقام القياسية.",
       boxOffice = "250 مليون جنيه مصري",
-      servers = createDefaultServers("welad_rizk_3", 0)
+      servers = createDefaultServers("welad_rizk_3", 0, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_harreefa",
@@ -532,7 +586,7 @@ object JokerTvDataProvider {
       cast = listOf("نور النبوي", "أحمد غزي", "كزبرة", "نور إيهاب", "خالد الذهبي", "أحمد حسام ميدو"),
       synopsis = "ماجد لاعب كرة قدم شاب يضطر للانتقال من مدرسته الدولية الراقية إلى مدرسة حكومية بعد إفلاس والده، لينضم لفريق كرة القدم للشارع ويخوض بطولة كبرى لتغيير مستقبله.",
       boxOffice = "75 مليون جنيه مصري",
-      servers = createDefaultServers("harreefa", 1)
+      servers = createDefaultServers("harreefa", 1, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_beit_alruby",
@@ -547,7 +601,7 @@ object JokerTvDataProvider {
       cast = listOf("كريم عبد العزيز", "كريم محمود عبد العزيز", "نور اللبنانية", "تارا عماد"),
       synopsis = "إبراهيم الروبي يعيش في هدوء منعزلاً في طابا بعد أزمة سوشيال ميديا سابقة، لكن شقيقه الأصغر يقنعه بالعودة للقاهرة لإنهاء أوراق خاصة، ليتحول بالصدفة لإنفلونسر شهير.",
       boxOffice = "130 مليون جنيه مصري",
-      servers = createDefaultServers("beit_alruby", 2)
+      servers = createDefaultServers("beit_alruby", 2, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_fasel_lahazat",
@@ -562,7 +616,7 @@ object JokerTvDataProvider {
       cast = listOf("هشام ماجد", "هنا الزاهد", "محمد ثروت", "بيومي فؤاد", "الطفل جان رامز"),
       synopsis = "صالح ودرية زوجان يعيشان حياة بائسة وكئيبة مليئة بالمشاكل، وفجأة تفتح بوابة لعالم موازٍ يعيشان فيه كنسخ سعيدة ومثالية، ما يقلب حياتهما رأساً على عقب.",
       boxOffice = "60 مليون جنيه مصري",
-      servers = createDefaultServers("fasel_lahazat", 3)
+      servers = createDefaultServers("fasel_lahazat", 3, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_shaqqo",
@@ -577,7 +631,7 @@ object JokerTvDataProvider {
       cast = listOf("عمرو يوسف", "محمد ممدوح", "أمينة خليل", "دينا الشربيني", "يسرا"),
       synopsis = "مجموعة من الأصدقاء الخارجين عن القانون يمارسون أعمالاً إجرامية مشبوهة، لكن عملية سطو غير محسوبة تقودهم إلى صراعات قاتلة مع زعماء عصابات وأجهزة أمنية.",
       boxOffice = "78 مليون جنيه مصري",
-      servers = createDefaultServers("shaqqo", 4)
+      servers = createDefaultServers("shaqqo", 4, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_al_serb",
@@ -592,7 +646,7 @@ object JokerTvDataProvider {
       cast = listOf("أحمد السقا", "شريف منير", "دياب", "محمد ممدوح", "نيللي كريم", "آسر ياسين"),
       synopsis = "ملحمة وطنية حقيقية توثق الضربات الجوية الدقيقة التي نفذتها القوات الجوية المصرية ضد التنظيمات الإرهابية في درنة بليبيا رداً على استشهاد مواطنين مصريين.",
       boxOffice = "45 مليون جنيه مصري",
-      servers = createDefaultServers("al_serb", 5)
+      servers = createDefaultServers("al_serb", 5, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_laeb_ma_eyal",
@@ -607,7 +661,7 @@ object JokerTvDataProvider {
       cast = listOf("محمد إمام", "أسماء جلال", "ماجد الكدواني", "باسم سمرة", "بيومي فؤاد"),
       synopsis = "مدرس تاريخ شاب يُنقل للتدريس في مدرسة نائية في صحراء سيناء، ليصطدم بعادات وتقاليد البدو ويدخل في مغامرات طريفة مع الطلاب وأهالي المنطقة.",
       boxOffice = "52 مليون جنيه مصري",
-      servers = createDefaultServers("laeb_ma_eyal", 6)
+      servers = createDefaultServers("laeb_ma_eyal", 6, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_esabat_max",
@@ -622,7 +676,7 @@ object JokerTvDataProvider {
       cast = listOf("أحمد فهمي", "روبي", "لبلبة", "أوس أوس", "حاتم صلاح"),
       synopsis = "الماكس معتاد على تنفيذ عمليات التهريب والسرقة منفرداً، حتى يجد نفسه مجبراً على الاستعانة بعائلة مزيفة ومجنونة لتمرير شحنة آثار ثمينة للغردقة.",
       boxOffice = "38 مليون جنيه مصري",
-      servers = createDefaultServers("esabat_max", 7)
+      servers = createDefaultServers("esabat_max", 7, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_ahl_kahf",
@@ -637,7 +691,7 @@ object JokerTvDataProvider {
       cast = listOf("خالد النبوي", "غادة عادل", "محمد ممدوح", "محمد فراج", "ريم مصطفى", "محمود حميدة"),
       synopsis = "اقتباس عن مسرحية توفيق الحكيم الخالدة حول ثلاثة أشخاص يستيقظون داخل كهف ليجدوا أنفسهم قد ناموا لأكثر من ثلاثة قرون، ويواجهون عالماً تغيّر بالكامل.",
       boxOffice = "25 مليون جنيه مصري",
-      servers = createDefaultServers("ahl_kahf", 0)
+      servers = createDefaultServers("ahl_kahf", 0, MediaType.MOVIE)
     ),
     EgyptianMovie(
       id = "mov_voy_voy",
@@ -652,7 +706,305 @@ object JokerTvDataProvider {
       cast = listOf("محمد فراج", "نيللي كريم", "بيومي فؤاد", "طه دسوقي", "أمجد الحجار"),
       synopsis = "شاب مصري فقير يدعي فقدان البصر للانضمام لفريق كرة القدم للمكفوفين، في محاولة للهروب والهجرة غير الشرعية إلى أوروبا خلال بطولة دولية في بولندا.",
       boxOffice = "35 مليون جنيه مصري",
-      servers = createDefaultServers("voy_voy", 1)
+      servers = createDefaultServers("voy_voy", 1, MediaType.MOVIE)
+    )
+  )
+
+  private fun createCartoonEpisodes(cartoonId: String, count: Int, isMovie: Boolean = false): List<Episode> {
+    if (isMovie) {
+      return listOf(
+        Episode(
+          number = 1,
+          title = "الفيلم الكامل (مدبلج بالعربي)",
+          duration = "105 دقيقة",
+          servers = createDefaultServers("${cartoonId}_full", 0, MediaType.CARTOON)
+        )
+      )
+    }
+    return (1..count).map { num ->
+      Episode(
+        number = num,
+        title = "الحلقة $num (مدبلج بالعربي)",
+        duration = "${22 + (num % 5)} دقيقة",
+        servers = createDefaultServers("${cartoonId}_ep$num", num - 1, MediaType.CARTOON)
+      )
+    }
+  }
+
+  val cartoonsList: List<CartoonItem> = listOf(
+    CartoonItem(
+      id = "cartoon_conan",
+      title = "المحقق كونان",
+      originalTitle = "Detective Conan",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "مركز الزهرة • سبيستون",
+      releaseYear = 2024,
+      genre = "غموض وتحقيق وتشويق",
+      posterUrl = "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 34500,
+      synopsis = "سينشي كودو محقق طالب ثانوي بارع يتقلص جسده ليصبح طفلاً صغيراً بعد تناوله عقاراً غامضاً من المنظمة السوداء، فيواصل حل أصعب الجرائم متخفياً باسم كونان إيدوغاوا.",
+      episodesCount = 50,
+      isMovie = false,
+      episodes = createCartoonEpisodes("conan", 50)
+    ),
+    CartoonItem(
+      id = "cartoon_onepiece",
+      title = "ون بيس (ملك القراصنة)",
+      originalTitle = "One Piece",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "استوديوهات الدبلجة العربية",
+      releaseYear = 2024,
+      genre = "أكشن ومغامرات وبحار",
+      posterUrl = "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 41200,
+      synopsis = "مغامرة ملحمية يتبع فيها مونكي دي لوفي وطاقم قبعة القش رحلتهم عبر الجراند لاين للبحث عن الكنز الأسطوري ون بيس ليصبح لوفي ملك القراصنة.",
+      episodesCount = 50,
+      isMovie = false,
+      episodes = createCartoonEpisodes("onepiece", 50)
+    ),
+    CartoonItem(
+      id = "cartoon_naruto",
+      title = "ناروتو شيبودن",
+      originalTitle = "Naruto Shippuden",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "مركز الزهرة بالعربي",
+      releaseYear = 2023,
+      genre = "أكشن وفنون قتالية",
+      posterUrl = "https://images.unsplash.com/photo-1618336753974-aae8e04506aa?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 38900,
+      synopsis = "يعود ناروتو أوزوماكي إلى قرية الورق بعد سنوات من التدريب الشاق لإنقاذ صديقه ساسكي ومواجهة منظمة الأكاتسوكي وتحقيق حلمه بأن يصبح الهوكاجي.",
+      episodesCount = 40,
+      isMovie = false,
+      episodes = createCartoonEpisodes("naruto", 40)
+    ),
+    CartoonItem(
+      id = "cartoon_dragonball",
+      title = "دراغون بول سوبر",
+      originalTitle = "Dragon Ball Super",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "مركز الزهرة • سبيستون",
+      releaseYear = 2024,
+      genre = "أكشن وقوة خارقة",
+      posterUrl = "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=500&auto=format&fit=crop&q=80",
+      rating = 4.8f,
+      ratingCount = 31000,
+      synopsis = "بعد هزيمة ماجين بو، يواجه غوكو وفيجيتا تحديات كونية غير مسبوقة ضد آلهة الدمار ومقاتلين من أكوان موازية في بطولة القوة الكبرى.",
+      episodesCount = 40,
+      isMovie = false,
+      episodes = createCartoonEpisodes("dragonball", 40)
+    ),
+    CartoonItem(
+      id = "cartoon_aot",
+      title = "هجوم العمالقة",
+      originalTitle = "Attack on Titan",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "الدبلجة العربية الاحترافية",
+      releaseYear = 2024,
+      genre = "أكشن وفانتازيا وملحمة",
+      posterUrl = "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 29400,
+      synopsis = "في عالم تعيش فيه البشرية خلف أسوار عملاقة للحماية من العمالقة آكلي البشر، ينضم إيرين ييغر وأصدقاؤه إلى فيلق الاستطلاع لكشف سر العمالقة واستعادة الحرية.",
+      episodesCount = 25,
+      isMovie = false,
+      ageRating = "+13 • أكشن وإثارة",
+      episodes = createCartoonEpisodes("aot", 25)
+    ),
+    CartoonItem(
+      id = "cartoon_hxh",
+      title = "القناص (هنتر × هنتر)",
+      originalTitle = "Hunter x Hunter",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "مركز الزهرة • سبيستون",
+      releaseYear = 2023,
+      genre = "مغامرات وأكشن وتشويق",
+      posterUrl = "https://images.unsplash.com/photo-1541562232579-512a21360020?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 27800,
+      synopsis = "ينطلق الفتى غون فريكس في رحلة محفوفة بالمخاطر لاجتياز اختبار الصيادين والبحث عن والده الصياد الأسطوري برفقة كيلوا وكورابيكا وليوريو.",
+      episodesCount = 36,
+      isMovie = false,
+      episodes = createCartoonEpisodes("hxh", 36)
+    ),
+    CartoonItem(
+      id = "cartoon_tsubasa",
+      title = "كابتن ماجد (الشبح)",
+      originalTitle = "Captain Tsubasa",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "مركز الزهرة • سبيستون",
+      releaseYear = 2024,
+      genre = "رياضي وكرة قدم",
+      posterUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500&auto=format&fit=crop&q=80",
+      rating = 4.8f,
+      ratingCount = 25600,
+      synopsis = "يحلم الفتى الموهوب ماجد كامل بقيادة منتخبه نحو بطولة العالم لكرة القدم، ويخوض منافسات مثيرة مع بسام ووليد ورفاقه على المستطيل الأخضر.",
+      episodesCount = 30,
+      isMovie = false,
+      episodes = createCartoonEpisodes("tsubasa", 30)
+    ),
+    CartoonItem(
+      id = "cartoon_demonslayer",
+      title = "قاتل الشياطين",
+      originalTitle = "Demon Slayer",
+      category = "أنمي ياباني",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "استوديوهات الدبلجة العربية",
+      releaseYear = 2024,
+      genre = "أكشن وفانتازيا",
+      posterUrl = "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 26400,
+      synopsis = "بعد مأساة قاسية تحل بعائلته، ينضم الشاب الطيب تانجيرو كامادو إلى فيلق قاتلي الشياطين بحثاً عن علاج يعيد شقيقته نيزوكو إلى طبيعتها البشرية.",
+      episodesCount = 26,
+      isMovie = false,
+      ageRating = "+13 • أكشن",
+      episodes = createCartoonEpisodes("demonslayer", 26)
+    ),
+    CartoonItem(
+      id = "cartoon_tom_jerry",
+      title = "توم وجيري",
+      originalTitle = "Tom and Jerry",
+      category = "كرتون عالمي",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "وارنر براذرز بالعربية",
+      releaseYear = 2023,
+      genre = "كوميدي وعائلي وكلاسيكي",
+      posterUrl = "https://images.unsplash.com/photo-1514306191717-452ec28c7814?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 52000,
+      synopsis = "أشهر مطاردة كوميدية في تاريخ الرسوم المتحركة بين القط توم والفأر الذكي جيري في حلقات كلاسيكية وحديثة ممتعة لجميع أفراد العائلة.",
+      episodesCount = 30,
+      isMovie = false,
+      episodes = createCartoonEpisodes("tomjerry", 30)
+    ),
+    CartoonItem(
+      id = "cartoon_gumball",
+      title = "عالم غامبول المدهش",
+      originalTitle = "The Amazing World of Gumball",
+      category = "كرتون عالمي",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "كرتون نتورك بالعربية",
+      releaseYear = 2024,
+      genre = "كوميدي وعائلي ومغامرات",
+      posterUrl = "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=500&auto=format&fit=crop&q=80",
+      rating = 4.8f,
+      ratingCount = 33700,
+      synopsis = "غامبول واترسون قط أزرق مشاغب يخوض مع شقيقه السمكة داروين مغامرات مضحكة ومواقف غريبة في مدينة إلمور المليئة بالشخصيات الطريفة.",
+      episodesCount = 30,
+      isMovie = false,
+      episodes = createCartoonEpisodes("gumball", 30)
+    ),
+    CartoonItem(
+      id = "cartoon_spongebob",
+      title = "سبونج بوب سكوير بانتس",
+      originalTitle = "SpongeBob SquarePants",
+      category = "كرتون عالمي",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "نيكلوديون بالعربية",
+      releaseYear = 2024,
+      genre = "كوميدي وعائلي",
+      posterUrl = "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=500&auto=format&fit=crop&q=80",
+      rating = 4.8f,
+      ratingCount = 44100,
+      synopsis = "الإسفنجة الصفراء المرحة سبونج بوب وصديقه بسيط نجم البحر يعيشان في قاع الهامور ويصنعان أشهى سلطع برجر وسط مواقف كوميدية لا تنتهي.",
+      episodesCount = 30,
+      isMovie = false,
+      episodes = createCartoonEpisodes("spongebob", 30)
+    ),
+    CartoonItem(
+      id = "cartoon_ben10",
+      title = "بن 10 (أومنيفرس)",
+      originalTitle = "Ben 10",
+      category = "كرتون عالمي",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "كرتون نتورك بالعربية",
+      releaseYear = 2023,
+      genre = "أكشن وخيال علمي",
+      posterUrl = "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=500&auto=format&fit=crop&q=80",
+      rating = 4.7f,
+      ratingCount = 24900,
+      synopsis = "الفتى بن تينيسون يمتلك ساعة الأومنيتريكس الفضائية التي تتيح له التحول إلى عشرات الأبطال الخارقين لحماية الأرض من الغزاة والأشرار.",
+      episodesCount = 26,
+      isMovie = false,
+      episodes = createCartoonEpisodes("ben10", 26)
+    ),
+    CartoonItem(
+      id = "cartoon_simba",
+      title = "الأسد الملك (سيمبا)",
+      originalTitle = "The Lion King",
+      category = "أفلام أنميشن",
+      dubbingLanguage = "مدبلج بالمصرية والعربية",
+      dubbingStudio = "ديزني بالعربي",
+      releaseYear = 2023,
+      genre = "مغامرات وعائلي وموسيقي",
+      posterUrl = "https://images.unsplash.com/photo-1546182990-dffeafbe841d?w=500&auto=format&fit=crop&q=80",
+      rating = 5.0f,
+      ratingCount = 58000,
+      synopsis = "تحفة ديزني الخالدة باللهجة المصرية المحببة حول الشبل سيمبا ورحلته بمساعدة تيمون وبومبا لاستعادة عرش الغابة من عمه سكار.",
+      episodesCount = 1,
+      isMovie = true,
+      episodes = createCartoonEpisodes("simba", 1, isMovie = true)
+    ),
+    CartoonItem(
+      id = "cartoon_spiderverse",
+      title = "سبايدرمان: عبر عالم العنكبوت",
+      originalTitle = "Spider-Man: Across the Spider-Verse",
+      category = "أفلام أنميشن",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "سوني بيكتشرز بالعربية",
+      releaseYear = 2024,
+      genre = "أكشن ومغامرات وخيال علمي",
+      posterUrl = "https://images.unsplash.com/photo-1635805737707-575885ab0820?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 36800,
+      synopsis = "ينطلق مايلز موراليس في رحلة مذهلة عبر الأكوان المتعددة ليقابل جيشاً من أبطال العنكبوت المكلفين بحماية وجود العوالم الموازية.",
+      episodesCount = 1,
+      isMovie = true,
+      episodes = createCartoonEpisodes("spiderverse", 1, isMovie = true)
+    ),
+    CartoonItem(
+      id = "cartoon_toystory",
+      title = "حكاية لعبة (توي ستوري)",
+      originalTitle = "Toy Story",
+      category = "أفلام أنميشن",
+      dubbingLanguage = "مدبلج بالمصرية",
+      dubbingStudio = "ديزني وبيكسار بالعربي",
+      releaseYear = 2023,
+      genre = "كوميدي وعائلي ومغامرات",
+      posterUrl = "https://images.unsplash.com/photo-1558060370-d644479cb6f7?w=500&auto=format&fit=crop&q=80",
+      rating = 4.9f,
+      ratingCount = 41500,
+      synopsis = "عندما يغادر البشر الغرفة تدب الحياة في الألعاب، ويخوض وودي وباز يطير مغامرة مدهشة مليئة بالصداقة والكوميديا.",
+      episodesCount = 1,
+      isMovie = true,
+      episodes = createCartoonEpisodes("toystory", 1, isMovie = true)
+    ),
+    CartoonItem(
+      id = "cartoon_frozen",
+      title = "ملكة الثلج (فروزن)",
+      originalTitle = "Frozen",
+      category = "أفلام أنميشن",
+      dubbingLanguage = "مدبلج بالعربي",
+      dubbingStudio = "ديزني بالعربي",
+      releaseYear = 2024,
+      genre = "موسيقي وفانتازيا وعائلي",
+      posterUrl = "https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=500&auto=format&fit=crop&q=80",
+      rating = 4.8f,
+      ratingCount = 39200,
+      synopsis = "تنطلق الأميرة آنا برفقة كريستوف ورجل الثلج أولاف في رحلة جليدية للبحث عن شقيقتها إلسا وإذابة الشتاء الأبدي عن مملكة أريندل.",
+      episodesCount = 1,
+      isMovie = true,
+      episodes = createCartoonEpisodes("frozen", 1, isMovie = true)
     )
   )
 
@@ -710,6 +1062,24 @@ object JokerTvDataProvider {
       commentText = "أكتر مسلسل ضحكني من سنين! هشام ماجد وأسماء جلال كيمياء غير عادية كوميديا راقية ونظيفة.",
       timestampText = "منذ 5 أيام",
       likes = 134
+    ),
+    UserComment(
+      id = "c_7",
+      itemId = "cartoon_conan",
+      authorName = "يوسف العتيبي",
+      rating = 5,
+      commentText = "أجمل قسم كرتون مدبلج بالعربي! دبلجة مركز الزهرة الأصلية لكونان والصفاء في الصورة مذهل.",
+      timestampText = "منذ ساعتين",
+      likes = 96
+    ),
+    UserComment(
+      id = "c_8",
+      itemId = "cartoon_onepiece",
+      authorName = "عمر الشامي",
+      rating = 5,
+      commentText = "كل حلقات ون بيس مدبلجة عربي وشغالة فوراً بدون أي أخطاء، شكراً جوكر TV!",
+      timestampText = "أمس",
+      likes = 112
     )
   )
 }

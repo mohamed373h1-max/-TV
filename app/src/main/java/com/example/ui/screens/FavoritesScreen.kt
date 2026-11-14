@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LiveTv
@@ -47,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,10 +77,11 @@ fun FavoritesScreen(
   onRemoveFavorite: (FavoriteItem) -> Unit,
   onOpenItem: (FavoriteItem) -> Unit,
   onExploreContent: () -> Unit,
+  onClearAllFavorites: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableStateOf("الكل") }
-  val tabs = listOf("الكل", "قنوات رياضية", "مسلسلات رمضان", "أفلام سينما")
+  val tabs = listOf("الكل", "قنوات رياضية", "مسلسلات رمضان", "أفلام سينما", "كرتون وأنمي")
 
   val filteredFavorites = remember(selectedTab, favoriteItems) {
     when (selectedTab) {
@@ -85,6 +89,7 @@ fun FavoritesScreen(
       "قنوات رياضية" -> favoriteItems.filter { it.mediaType == MediaType.CHANNEL || it.mediaType == MediaType.MATCH }
       "مسلسلات رمضان" -> favoriteItems.filter { it.mediaType == MediaType.SERIES }
       "أفلام سينما" -> favoriteItems.filter { it.mediaType == MediaType.MOVIE }
+      "كرتون وأنمي" -> favoriteItems.filter { it.mediaType == MediaType.CARTOON }
       else -> favoriteItems
     }
   }
@@ -121,36 +126,78 @@ fun FavoritesScreen(
           )
         }
 
-        Surface(
-          color = JokerPurplePrimary.copy(alpha = 0.2f),
-          shape = RoundedCornerShape(12.dp)
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-          Text(
-            text = "${favoriteItems.size} عناصر محفوظة",
-            color = JokerPurpleLight,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-          )
+          if (favoriteItems.isNotEmpty()) {
+            TextButton(
+              onClick = onClearAllFavorites,
+              modifier = Modifier.testTag("clear_all_favorites_button")
+            ) {
+              Text(
+                text = "مسح الكل",
+                color = JokerLiveRed,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+              )
+            }
+          }
+
+          Surface(
+            color = JokerPurplePrimary.copy(alpha = 0.2f),
+            shape = RoundedCornerShape(12.dp)
+          ) {
+            Text(
+              text = "${favoriteItems.size} محفوظ",
+              color = JokerPurpleLight,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+          }
         }
       }
     }
 
-    // Filter Tabs
+    // Filter Tabs with live Room counts
     item {
+      val sportsCount = remember(favoriteItems) {
+        favoriteItems.count { it.mediaType == MediaType.CHANNEL || it.mediaType == MediaType.MATCH }
+      }
+      val seriesCount = remember(favoriteItems) {
+        favoriteItems.count { it.mediaType == MediaType.SERIES }
+      }
+      val moviesCount = remember(favoriteItems) {
+        favoriteItems.count { it.mediaType == MediaType.MOVIE }
+      }
+      val cartoonsCount = remember(favoriteItems) {
+        favoriteItems.count { it.mediaType == MediaType.CARTOON }
+      }
+
       LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         items(tabs) { tab ->
           val isSelected = tab == selectedTab
+          val count = when (tab) {
+            "الكل" -> favoriteItems.size
+            "قنوات رياضية" -> sportsCount
+            "مسلسلات رمضان" -> seriesCount
+            "أفلام سينما" -> moviesCount
+            "كرتون وأنمي" -> cartoonsCount
+            else -> 0
+          }
           Surface(
             color = if (isSelected) JokerPurplePrimary else JokerSurfaceElevated,
             shape = RoundedCornerShape(20.dp),
-            modifier = Modifier.clickable { selectedTab = tab }
+            modifier = Modifier
+              .testTag("favorite_filter_$tab")
+              .clickable { selectedTab = tab }
           ) {
             Text(
-              text = tab,
+              text = "$tab ($count)",
               color = if (isSelected) Color.White else TextSecondary,
               fontSize = 12.sp,
               fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
@@ -207,7 +254,8 @@ fun FavoritesScreen(
             Button(
               onClick = onExploreContent,
               colors = ButtonDefaults.buttonColors(containerColor = JokerPurplePrimary),
-              shape = RoundedCornerShape(12.dp)
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier.testTag("explore_content_button")
             ) {
               Text(text = "تصفح المحتوى الآن", fontWeight = FontWeight.Bold)
             }
@@ -216,7 +264,7 @@ fun FavoritesScreen(
       }
     } else {
       // Favorite Cards List
-      items(filteredFavorites) { item ->
+      items(filteredFavorites, key = { it.id }) { item ->
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
           FavoriteItemCard(
             item = item,
@@ -277,6 +325,7 @@ fun FavoriteItemCard(
                 MediaType.MATCH -> Icons.Default.SportsSoccer
                 MediaType.SERIES -> Icons.Default.Tv
                 MediaType.MOVIE -> Icons.Default.LocalMovies
+                MediaType.CARTOON -> Icons.Default.AutoAwesome
               },
               contentDescription = null,
               tint = JokerPurpleLight,
